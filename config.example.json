@@ -1,0 +1,9 @@
+{
+  "mode": "echo",
+  "botId": "",
+  "botSecret": "",
+  "modelApiUrl": "https://api.openai.com/v1/chat/completions",
+  "modelApiKey": "",
+  "model": "gpt-5.4-mini",
+  "systemPrompt": "你是一个中文助手。请清楚、简洁地回答。你目前只能对话，不能操作数据库或执行外部任务。"
+}
