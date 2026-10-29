@@ -66,7 +66,7 @@ def main():
         if archive.wait() != 0:
             raise RuntimeError('Git archive failed; services were not switched.')
     bridge = release / 'bridge'
-    for name in ['worker.mjs', 'hub.mjs', 'weixin.mjs', 'models.mjs']:
+    for name in ['worker.mjs', 'hub.mjs', 'weixin.mjs', 'models.mjs', 'reasoning.mjs']:
         run(paths['node'], '--check', str(bridge / name))
     run(paths['node'], '--test', *(str(bridge / name) for name in ['worker.test.mjs', 'hub.test.mjs', 'weixin.test.mjs', 'models.test.mjs']))
     private_json(shared / 'providers.json', json.loads((bridge / 'providers.example.json').read_text()))

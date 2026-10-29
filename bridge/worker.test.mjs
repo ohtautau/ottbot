@@ -1,17 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { createWorker, MODELS, normalizeRequest, parseCommand, authorized, buildPrompt } from './worker.mjs';
+import { createWorker, MODELS, normalizeRequest, parseCommand, authorized, buildPrompt, codexArguments } from './worker.mjs';
+import { resolveEffort, reasoningOptions } from './reasoning.mjs';
 
 test('exact commands and authentication', () => {
   assert.deepEqual(parseCommand('/模型 luna'), { type: 'model', value: 'luna' });
   assert.deepEqual(parseCommand('/model SOL'), { type: 'model', value: 'sol' });
+  assert.deepEqual(parseCommand('/推理 medium'), { type: 'reasoning', value: 'medium' });
+  assert.equal(parseCommand('文章中解释 /推理 high'), null);
   assert.equal(parseCommand('文章里写了 /模型 luna'), null);
   assert.equal(authorized('Bearer secret', 'secret'), true);
   assert.equal(authorized('Bearer wrong', 'secret'), false);
+});
+
+test('reasoning model limits, cache metadata and CLI overrides are explicit', async () => {
+  assert.equal(resolveEffort('高'), 'high');
+  assert.equal(resolveEffort('default'), 'auto');
+  assert.equal(resolveEffort('high --config=unsafe'), null);
+  assert.equal((await reasoningOptions({}, MODELS.luna)).includes('ultra'), false);
+  assert.equal((await reasoningOptions({}, MODELS.sol)).includes('ultra'), true);
+  assert.deepEqual(await reasoningOptions({}, 'gpt-unknown'), ['auto']);
+  assert.deepEqual(await reasoningOptions({}, 'deepseek/model'), []);
+  assert.ok(codexArguments({ workspace: '.', reasoningEffort: 'medium' }, MODELS.sol).includes('model_reasoning_effort="medium"'));
+  assert.equal(codexArguments({ workspace: '.', reasoningEffort: 'auto' }, MODELS.sol).some(arg => arg.includes('model_reasoning_effort')), false);
+  const folder = await mkdtemp(join(tmpdir(), 'ottbot-model-metadata-'));
+  try {
+    const path = join(folder, 'models.json');
+    await writeFile(path, JSON.stringify({ models: [{ slug: MODELS.sol, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }] }] }));
+    assert.deepEqual(await reasoningOptions({ modelCacheFile: path }, MODELS.sol), ['auto', 'low', 'high']);
+  } finally { await rm(folder, { recursive: true, force: true }); }
 });
 
 test('only visible conversation is passed; wrong model, tool continuation and image URLs rejected', () => {
@@ -43,8 +64,11 @@ test('bounded history and image attachment', () => {
 test('HTTP auth, model control without inference, persistence, SSE and backend failure', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ottbot-bridge-test-'));
   const config = { runtimeDirectory: dir, defaultModel: MODELS.sol, workerToken: 'test-token' };
+  await writeFile(join(dir, 'selection.json'), JSON.stringify({ model: MODELS.sol }));
   let calls = 0;
+  let observedEffort;
   const server = await createWorker(config, async (_config, request, model) => {
+    observedEffort = _config.reasoningEffort;
     calls++;
     if (request.text === 'fail') throw new Error('controlled backend failure');
     return `中文测试：${request.text} (${model})`;
@@ -58,12 +82,16 @@ test('HTTP auth, model control without inference, persistence, SSE and backend f
   try {
     assert.equal((await fetch(url + '/health')).status, 401);
     assert.equal((await fetch(url + '/health', { headers })).status, 200);
+    assert.equal((await (await fetch(url + '/health', { headers })).json()).reasoningEffort, 'low');
     assert.equal((await (await chat('/模型 luna')).json()).choices[0].message.content.includes(MODELS.luna), true);
+    assert.match((await (await chat('/推理 ultra')).json()).choices[0].message.content, /不支持/);
+    assert.equal((await (await chat('/推理 medium')).json()).settings.reasoningEffort, 'medium');
     assert.equal((await (await chat('/模型 invalid')).json()).choices[0].message.content.includes('没有这个模型'), true);
     assert.equal(calls, 0);
     const completion = await (await chat('hello')).json();
     assert.ok(completion.choices[0].message.content.includes('中文测试：hello'));
     assert.ok(completion.choices[0].message.content.includes(MODELS.luna));
+    assert.equal(observedEffort, 'medium');
     const sse = await (await chat('stream', true)).text();
     assert.ok(sse.includes('chat.completion.chunk'));
     assert.ok(sse.includes('data: [DONE]'));
@@ -74,6 +102,7 @@ test('HTTP auth, model control without inference, persistence, SSE and backend f
     reloaded.listen(0, '127.0.0.1');
     await once(reloaded, 'listening');
     assert.equal((await (await fetch(`http://127.0.0.1:${reloaded.address().port}/health`, { headers })).json()).model, MODELS.luna);
+    assert.equal((await (await fetch(`http://127.0.0.1:${reloaded.address().port}/health`, { headers })).json()).reasoningEffort, 'medium');
     await new Promise(resolve => reloaded.close(resolve));
   } finally {
     await new Promise(resolve => server.close(resolve));

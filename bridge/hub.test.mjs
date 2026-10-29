@@ -17,9 +17,11 @@ test('server default, computer execution, persistent model selection and no offl
   const folder = await mkdtemp(join(tmpdir(), 'ottbot-hub-'));
   const token = 'test-private-token';
   const runs = [];
+  const efforts = [];
   const startWorker = async target => {
     const worker = await createWorker({ runtimeDirectory: join(folder, target), workerToken: token }, async (_c, request, model) => {
       runs.push({ target, text: request.text, model });
+      efforts.push(_c.reasoningEffort);
       return `${target}: ${request.text}`;
     });
     worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
@@ -43,12 +45,17 @@ test('server default, computer execution, persistent model selection and no offl
     assert.match(missingApi.choices[0].message.content, /尚未配置/);
     assert.equal((await (await fetch(base + '/health', { headers })).json()).model, MODELS.sol);
     await (await chat('/模型 luna')).body.cancel();
+    await (await chat('/推理 high')).body.cancel();
+    const invalidEffort = await (await chat('/推理 ultra')).json();
+    assert.match(invalidEffort.choices[0].message.content, /不支持/);
     assert.equal(runs.length, 0);
     assert.ok((await (await chat('hello')).json()).choices[0].message.content.includes('server: hello'));
     assert.deepEqual(runs.at(-1), { target: 'server', text: 'hello', model: MODELS.luna });
+    assert.equal(efforts.at(-1), 'high');
     const stream = await (await chat('/电脑 检查项目', true)).text();
     assert.ok(stream.includes('computer: 检查项目') && stream.includes('[DONE]'));
     assert.equal(runs.at(-1).target, 'computer');
+    assert.equal(efforts.at(-1), 'high');
     await (await chat('/执行 电脑')).body.cancel();
     await new Promise(resolve => computer.close(resolve)); computerClosed = true;
     const count = runs.length;
@@ -66,6 +73,7 @@ test('server default, computer execution, persistent model selection and no offl
     const saved = await (await fetch(`http://127.0.0.1:${reloaded.address().port}/health`, { headers })).json();
     assert.equal(saved.model, MODELS.luna);
     assert.equal(saved.target, 'computer');
+    assert.equal(saved.reasoningEffort, 'high');
     await new Promise(resolve => reloaded.close(resolve));
   } finally {
     await new Promise(resolve => hub.close(resolve));

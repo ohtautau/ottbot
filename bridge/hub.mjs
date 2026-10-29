@@ -5,8 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { MODELS, authorized, textContent, parseCommand } from './worker.mjs';
 import { resolveModel, apiConfig } from './models.mjs';
+import { resolveEffort, reasoningOptions, reasoningHelp } from './reasoning.mjs';
 
 const TARGETS = { '服务器': 'server', server: 'server', '电脑': 'computer', computer: 'computer', pc: 'computer' };
 
@@ -19,11 +21,12 @@ export function routingCommand(text) {
 export async function createHub(config) {
   await mkdir(config.runtimeDirectory, { recursive: true });
   const stateFile = join(config.runtimeDirectory, 'hub-selection.json');
-  let selection = { target: 'server', model: MODELS.sol };
+  let selection = { target: 'server', model: MODELS.sol, effort: 'low' };
   try {
     const stored = JSON.parse(await readFile(stateFile, 'utf8'));
     if (!['server', 'computer'].includes(stored.target) || !resolveModel(stored.model)) throw new Error('Invalid selection');
-    selection = stored;
+    if (stored.effort !== undefined && !resolveEffort(stored.effort)) throw new Error('Invalid reasoning state');
+    selection = { ...stored, effort: resolveEffort(stored.effort || 'low') };
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const persist = async value => {
     await writeFile(stateFile + '.tmp', JSON.stringify(value), { mode: 0o600 });
@@ -53,7 +56,7 @@ export async function createHub(config) {
       res.end(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\ndata: [DONE]\n\n`);
     } else json(res, 200, { id, created, model: 'codex-local', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] });
   };
-  const help = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n/服务器 你的要求：仅本次在服务器执行\n/电脑 你的要求：仅本次在电脑执行（离线时不转移任务）\n/执行 服务器 或 /执行 电脑：修改默认执行端\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：查看执行端在线情况\nAPI密钥保存在服务器私有配置，切换后才按API计费，不自动回退。API当前仅聊天。模型与默认执行端设置适用于此私人服务的所有会话。`;
+  const help = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n推理强度：${selection.model.includes('/') ? 'API默认' : selection.effort}\n/推理：查看档位；/推理 medium：修改\n/服务器 你的要求：仅本次在服务器执行\n/电脑 你的要求：仅本次在电脑执行（离线时不转移任务）\n/执行 服务器 或 /执行 电脑：修改默认执行端\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：查看执行端在线情况\nAPI密钥保存在服务器私有配置，切换后才按API计费，不自动回退。API当前仅聊天。模型、推理与默认执行端设置适用于此私人服务的所有会话。`;
   let busy = false;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
@@ -62,6 +65,7 @@ export async function createHub(config) {
     if (req.method === 'GET' && req.url === '/health') {
       const [remote, computer] = await Promise.all([health('server'), health('computer')]);
       return json(res, 200, { ok: true, execution: 'hybrid-codex', model: selection.model, target: selection.target,
+        reasoningEffort: selection.effort,
         serverOnline: Boolean(remote), computerOnline: Boolean(computer), serverAuthenticated: remote?.authenticated ?? null, busy });
     }
     if (req.method !== 'POST' || req.url !== '/v1/chat/completions') return json(res, 404, { error: { message: 'Not found' } });
@@ -95,13 +99,24 @@ export async function createHub(config) {
         return answer(res, body, `默认执行端已设为${name(target)}。\n${help()}`);
       }
       if (command) {
+        if (command.type === 'reasoning') {
+          const options = await reasoningOptions(config, selection.model);
+          const effort = resolveEffort(command.value);
+          if (!command.value || !effort || !options.includes(effort)) {
+            return answer(res, body, (command.value && options.length ? '该模型不支持这个推理档位。\n' : '') + await reasoningHelp(config, selection.model, selection.effort));
+          }
+          await persist({ ...selection, effort });
+          return answer(res, body, `推理强度已设为 ${effort}，从下一条任务生效，服务器和电脑执行端都会采用；重启保留，设置本身不调用模型。`);
+        }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
           if (!model) return answer(res, body, `没有这个模型。\n${help()}`);
           try { await apiConfig(config, model); }
           catch (error) { return answer(res, body, error.message); }
-          await persist({ ...selection, model });
-          return answer(res, body, `已切换到 ${model}。下一条普通消息生效；切换不调用模型。${model.includes('/') ? '\n这是独立API通道，按该提供商计费，当前仅聊天。' : '\n使用ChatGPT账号的Codex额度；实际模型权限需调用验证。'}`);
+          const options = await reasoningOptions(config, model);
+          const effort = !options.length || options.includes(selection.effort) ? selection.effort : 'auto';
+          await persist({ ...selection, model, effort });
+          return answer(res, body, `已切换到 ${model}。下一条普通消息生效；切换不调用模型。${model.includes('/') ? '\n这是独立API通道，按该提供商计费，当前仅聊天。' : `\n推理强度：${effort}；发送 /推理 查看。\n使用ChatGPT账号的Codex额度；实际模型权限需调用验证。`}`);
         }
         if (command.type === 'status') {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
@@ -111,11 +126,22 @@ export async function createHub(config) {
       }
       const target = route?.target || selection.target;
       if (route && !route.text && !hasImages) return answer(res, body, `请在 /${name(target)} 后写要执行的任务。`);
-      if (!await health(target)) return json(res, 503, { error: { message: `${name(target)}执行端离线。本次任务没有执行，也不会改交其他机器。` } });
+      const current = await health(target);
+      if (!current) return json(res, 503, { error: { message: `${name(target)}执行端离线。本次任务没有执行，也不会改交其他机器。` } });
+      if (current.reasoningControl !== true) return json(res, 503, { error: { message: '执行端版本需要更新并重启；本次没有执行，避免推理设置被当作普通任务。' } });
       const control = await fetch(endpoint(target) + '/v1/chat/completions', { method: 'POST', headers,
         body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: `/模型 ${selection.model}` }] }), signal: AbortSignal.timeout(5000) });
       if (!control.ok) { await control.body.cancel(); throw new Error('执行端忙碌或模型设置失败。'); }
-      await control.body.cancel();
+      const modelControl = await control.json();
+      if (modelControl.settings?.model !== selection.model) throw new Error('Model synchronization failed');
+      if (!selection.model.includes('/')) {
+        const reasoning = await fetch(endpoint(target) + '/v1/chat/completions', { method: 'POST', headers,
+          body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: `/推理 ${selection.effort}` }] }), signal: AbortSignal.timeout(5000) });
+        const result = await reasoning.json();
+        if (!reasoning.ok || result.settings?.reasoningEffort !== selection.effort) {
+          return json(res, 400, { error: { message: '指定执行端不支持当前推理档位，请先发送 /推理 查看或选择 /推理 auto。本次没有调用模型。' } });
+        }
+      }
       if (route) {
         const content = Array.isArray(last.content)
           ? [{ type: 'text', text: route.text }, ...last.content.filter(part => part.type !== 'text')]
@@ -141,6 +167,7 @@ export async function createHub(config) {
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href) {
   const path = resolve(process.argv[2]);
   const config = JSON.parse(await readFile(path, 'utf8'));
+  config.modelCacheFile ||= join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'models_cache.json');
   config.runtimeDirectory = resolve(dirname(path), 'hub-runtime');
   const server = await createHub(config);
   server.listen(config.port || 18892, '127.0.0.1', () => console.log('Private dual-executor hub ready.'));

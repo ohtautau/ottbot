@@ -6,7 +6,9 @@ import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { MODELS, resolveModel, apiConfig, runApi } from './models.mjs';
+import { resolveEffort, reasoningOptions, reasoningHelp } from './reasoning.mjs';
 
 export { MODELS } from './models.mjs';
 const LIMIT = 24 * 1024 * 1024;
@@ -35,6 +37,9 @@ export function parseCommand(text) {
   const value = text.trim();
   if (/^\/(?:模型|model)(?:\s|$)/i.test(value)) {
     return { type: 'model', value: value.replace(/^\/(?:模型|model)\s*/i, '').trim().toLowerCase() };
+  }
+  if (/^\/(?:推理|思考|reasoning|effort)(?:\s|$)/i.test(value)) {
+    return { type: 'reasoning', value: value.replace(/^\/(?:推理|思考|reasoning|effort)\s*/i, '').trim().toLowerCase() };
   }
   if (/^\/(?:状态|status)$/i.test(value)) return { type: 'status' };
   if (/^\/(?:帮助|help)$/i.test(value)) return { type: 'help' };
@@ -104,6 +109,17 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+export function codexArguments(config, model) {
+  const args = ['exec', '--ignore-user-config', '--ephemeral', '--json', '--color', 'never',
+    '-C', config.workspace, '-s', config.sandbox || 'read-only', '-m', model,
+    '-c', 'model_provider="openai"'];
+  const effort = resolveEffort(config.reasoningEffort || 'low');
+  if (!effort) throw new Error('推理强度配置无效。');
+  if (effort !== 'auto') args.push('-c', `model_reasoning_effort="${effort}"`);
+  if (config.skipGitCheck === true) args.push('--skip-git-repo-check');
+  return args;
+}
+
 export async function runCodex(config, request, model, signal) {
   if (model.includes('/')) return runApi(config, request, model, signal);
   const env = { ...process.env };
@@ -118,10 +134,7 @@ export async function runCodex(config, request, model, signal) {
   if (signal?.aborted) throw new Error('请求已取消。');
   const folder = await mkdtemp(join(config.runtimeDirectory, 'request-'));
   try {
-    const args = ['exec', '--ignore-user-config', '--ephemeral', '--json', '--color', 'never',
-      '-C', config.workspace, '-s', config.sandbox || 'read-only', '-m', model,
-      '-c', 'model_reasoning_effort="low"', '-c', 'model_provider="openai"'];
-    if (config.skipGitCheck === true) args.push('--skip-git-repo-check');
+    const args = codexArguments(config, model);
     for (let i = 0; i < request.images.length; i++) {
       const path = join(folder, `image-${i}.${request.images[i].extension}`);
       await writeFile(path, request.images[i].data);
@@ -176,13 +189,21 @@ export async function createWorker(config, execute = runCodex) {
   await mkdir(config.runtimeDirectory, { recursive: true });
   const selectionFile = join(config.runtimeDirectory, 'selection.json');
   let selected = config.defaultModel || MODELS.sol;
+  let effort = resolveEffort(config.reasoningEffort || 'low');
   try {
     const stored = JSON.parse(await readFile(selectionFile, 'utf8'));
     if (resolveModel(stored.model)) selected = resolveModel(stored.model);
+    if (stored.effort !== undefined) effort = resolveEffort(stored.effort);
   } catch (e) { if (e.code !== 'ENOENT') throw new Error('模型状态文件损坏，请在本机修复；未静默覆盖。'); }
   if (!resolveModel(selected)) throw new Error('不支持的默认模型。');
+  if (!effort) throw new Error('推理强度状态无效。');
+  const persist = async (model, nextEffort) => {
+    await writeFile(selectionFile + '.tmp', JSON.stringify({ model, effort: nextEffort }), { mode: 0o600 });
+    await rename(selectionFile + '.tmp', selectionFile);
+    selected = model; effort = nextEffort;
+  };
   let busy = false;
-  const help = () => `当前模型：${selected}\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：检查连接\n/帮助：查看说明\n切换作用于此私人转接的所有会话，本身不调用模型。API密钥只在私有配置设置，不要发到微信。API当前仅聊天，操作博客或电脑请切回Codex。`;
+  const help = () => `当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n/推理：查看档位；/推理 medium：修改\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：检查连接\n/帮助：查看说明\n切换作用于此私人转接的所有会话，本身不调用模型。API密钥只在私有配置设置，不要发到微信。API当前仅聊天，操作博客或电脑请切回Codex。`;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
     if (!authorized(req.headers.authorization, config.workerToken)) return json(res, 401, { error: { message: 'Unauthorized' } });
@@ -194,7 +215,7 @@ export async function createWorker(config, execute = runCodex) {
           authenticated = /Logged in using ChatGPT/.test(login.stdout + login.stderr);
         } catch { authenticated = false; }
       }
-      return json(res, 200, { ok: true, model: selected, busy, authenticated,
+      return json(res, 200, { ok: true, model: selected, reasoningEffort: effort, reasoningControl: true, busy, authenticated,
         execution: config.executionName || 'local-codex', sandbox: config.sandbox || 'read-only' });
     }
     if (req.method === 'GET' && req.url === '/v1/models') return json(res, 200, { object: 'list', data: [{ id: 'codex-local', object: 'model', owned_by: 'local' }] });
@@ -218,25 +239,32 @@ export async function createWorker(config, execute = runCodex) {
       let answer;
       if (request.command) {
         const command = request.command;
-        if (command.type === 'model' && command.value) {
+        if (command.type === 'reasoning') {
+          const options = await reasoningOptions(config, selected);
+          const chosen = resolveEffort(command.value);
+          if (command.value && chosen && options.includes(chosen)) {
+            await persist(selected, chosen);
+            answer = `推理强度已设为 ${effort}。下一条任务生效，不调用模型。`;
+          } else answer = (command.value && options.length ? '该模型不支持这个推理档位。\n' : '') + await reasoningHelp(config, selected, effort);
+        } else if (command.type === 'model' && command.value) {
           const chosen = resolveModel(command.value);
           if (!chosen) answer = `没有这个模型。\n${help()}`;
           else {
             await apiConfig(config, chosen);
-            await writeFile(selectionFile + '.tmp', JSON.stringify({ model: chosen }), { mode: 0o600 });
-            await rename(selectionFile + '.tmp', selectionFile);
-            selected = chosen;
-            answer = `已切换到 ${selected}。下一条普通消息开始使用此模型；切换本身不调用模型。`;
+            const options = await reasoningOptions(config, chosen);
+            const nextEffort = !options.length || options.includes(effort) ? effort : 'auto';
+            await persist(chosen, nextEffort);
+            answer = `已切换到 ${selected}。下一条普通消息开始使用此模型；切换本身不调用模型。\n推理强度：${chosen.includes('/') ? 'API默认' : effort}；发送 /推理 查看。`;
           }
         } else answer = request.command.type === 'status'
-          ? `转接已连接，Codex 执行端可接收任务。\n当前模型：${selected}\n认证：每次模型调用前检查 ChatGPT 登录\n执行权限：${config.sandbox || 'read-only'}；博客授权接口尚未接入。\n本状态检查不验证模型额度。`
+          ? `转接已连接，Codex 执行端可接收任务。\n当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n认证：每次模型调用前检查 ChatGPT 登录\n执行权限：${config.sandbox || 'read-only'}；博客授权接口尚未接入。\n本状态检查不验证模型额度。`
           : help();
-      } else answer = await execute(config, request, selected, controller.signal);
+      } else answer = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
       if (res.destroyed) return;
       if (body.stream === true) {
         res.write(`data: ${JSON.stringify(chunk({ content: answer }))}\n\n`);
         res.end(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\ndata: [DONE]\n\n`);
-      } else json(res, 200, { id, object: 'chat.completion', created, model: 'codex-local', choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }] });
+      } else json(res, 200, { id, object: 'chat.completion', created, model: 'codex-local', settings: { model: selected, reasoningEffort: effort }, choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }] });
     } catch (error) {
       if (res.destroyed) return;
       if (res.headersSent) res.end(`data: ${JSON.stringify({ error: { message: error.message, type: 'codex_bridge_error' } })}\n\ndata: [DONE]\n\n`);
@@ -251,6 +279,7 @@ export async function createWorker(config, execute = runCodex) {
 async function main() {
   const configPath = resolve(process.argv[2] || 'local-state/codex-bridge/worker.json');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.modelCacheFile ||= join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'models_cache.json');
   if (typeof config.workerToken !== 'string' || config.workerToken.length < 32) throw new Error('缺少本机转接密钥。');
   config.runtimeDirectory = resolve(dirname(configPath), 'runtime');
   const server = await createWorker(config);

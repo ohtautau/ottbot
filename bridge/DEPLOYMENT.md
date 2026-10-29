@@ -38,6 +38,7 @@ python3 /home/ubuntu/ottbot-source/bridge/deploy-server.py
 ## 微信里的模型切换
 
 - `/模型`：查看当前模型和用法。
+- `/推理`：查看当前模型的推理档位；`/推理 low|medium|high|xhigh|max|ultra` 设置，`/推理 auto` 恢复模型默认值。以模型能力缓存为准，Luna 不接受 ultra；不支持的值拒绝保存。API 通道尚未接入各提供商的推理参数。
 - `/模型 luna`、`/模型 sol`、`/模型 terra`、`/模型 astra`：ChatGPT 账号的 Codex 模型。
 - `/模型 codex/sol`：明确回到 Codex 通道。
 - `/模型 gpt-完整模型名称`：指定账号可用的其他 Codex 模型；切换不验证实际权限，真实调用失败会报告。
