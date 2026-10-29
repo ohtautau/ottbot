@@ -2,7 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { MODELS } from './models.mjs';
 
 const LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
-const ALIASES = { '低': 'low', '中': 'medium', '高': 'high', '超高': 'xhigh', '最大': 'max', '极致': 'ultra', '默认': 'auto', default: 'auto' };
+const NUMBERED = Object.freeze({ '0': 'auto', '1': 'low', '2': 'medium', '3': 'high', '4': 'xhigh', '5': 'max', '6': 'ultra' });
+const LABELS = { auto: '模型默认', none: '不推理', minimal: '最少', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最大', ultra: '极致' };
+const ALIASES = { ...NUMBERED, '低': 'low', '中': 'medium', '高': 'high', '超高': 'xhigh', '最大': 'max', '极致': 'ultra', '默认': 'auto', default: 'auto' };
+
+export function effortLabel(effort) {
+  const number = Object.keys(NUMBERED).find(key => NUMBERED[key] === effort);
+  return `${number === undefined ? '' : number + ' · '}${effort}（${LABELS[effort] || effort}）`;
+}
 
 export function resolveEffort(value) {
   const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -27,5 +34,7 @@ export async function reasoningOptions(config, model) {
 
 export async function reasoningHelp(config, model, effort) {
   if (model.includes('/')) return '当前为 API 通道，尚未接入提供商各自的推理参数；/推理 不会修改或发送 API 参数。切回 Codex 后可设置。';
-  return `当前推理强度：${effort}\n可用档位：${(await reasoningOptions(config, model)).join(' | ')}\n例如 /推理 medium；/推理 auto 使用模型默认值。修改从下一条任务生效，重启保留，不调用模型。档位越高通常更慢、消耗更多额度。`;
+  const options = await reasoningOptions(config, model);
+  const menu = options.map(level => `${effortLabel(level)}${level === effort ? ' ← 当前' : ''}`).join('\n');
+  return `当前推理强度：${effortLabel(effort)}\n可用档位（编号固定，不随模型变化）：\n${menu}\n发送 /推理 数字 即可修改，例如 /推理 ${options.includes('medium') ? '2 切到 medium（中）' : '0 使用模型默认值'}。也可继续使用英文或中文档位名。\n修改从下一条任务生效，重启保留，不调用模型。档位越高通常更慢、消耗更多额度。`;
 }

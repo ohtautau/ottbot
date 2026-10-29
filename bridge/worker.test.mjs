@@ -20,6 +20,8 @@ test('exact commands and authentication', () => {
 test('reasoning model limits, cache metadata and CLI overrides are explicit', async () => {
   assert.equal(resolveEffort('高'), 'high');
   assert.equal(resolveEffort('default'), 'auto');
+  assert.equal(resolveEffort('2'), 'medium');
+  assert.equal(resolveEffort('7'), null);
   assert.equal(resolveEffort('high --config=unsafe'), null);
   assert.equal((await reasoningOptions({}, MODELS.luna)).includes('ultra'), false);
   assert.equal((await reasoningOptions({}, MODELS.sol)).includes('ultra'), true);
@@ -84,8 +86,11 @@ test('HTTP auth, model control without inference, persistence, SSE and backend f
     assert.equal((await fetch(url + '/health', { headers })).status, 200);
     assert.equal((await (await fetch(url + '/health', { headers })).json()).reasoningEffort, 'low');
     assert.equal((await (await chat('/模型 luna')).json()).choices[0].message.content.includes(MODELS.luna), true);
-    assert.match((await (await chat('/推理 ultra')).json()).choices[0].message.content, /不支持/);
-    assert.equal((await (await chat('/推理 medium')).json()).settings.reasoningEffort, 'medium');
+    const menu = (await (await chat('/推理')).json()).choices[0].message.content;
+    assert.match(menu, /2 · medium（中）/);
+    assert.doesNotMatch(menu, /6 · ultra/);
+    assert.match((await (await chat('/推理 6')).json()).choices[0].message.content, /不支持/);
+    assert.equal((await (await chat('/推理 2')).json()).settings.reasoningEffort, 'medium');
     assert.equal((await (await chat('/模型 invalid')).json()).choices[0].message.content.includes('没有这个模型'), true);
     assert.equal(calls, 0);
     const completion = await (await chat('hello')).json();

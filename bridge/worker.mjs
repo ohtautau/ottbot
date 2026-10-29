@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { MODELS, resolveModel, apiConfig, runApi } from './models.mjs';
-import { resolveEffort, reasoningOptions, reasoningHelp } from './reasoning.mjs';
+import { resolveEffort, reasoningOptions, reasoningHelp, effortLabel } from './reasoning.mjs';
 
 export { MODELS } from './models.mjs';
 const LIMIT = 24 * 1024 * 1024;
@@ -203,7 +203,7 @@ export async function createWorker(config, execute = runCodex) {
     selected = model; effort = nextEffort;
   };
   let busy = false;
-  const help = () => `当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n/推理：查看档位；/推理 medium：修改\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：检查连接\n/帮助：查看说明\n切换作用于此私人转接的所有会话，本身不调用模型。API密钥只在私有配置设置，不要发到微信。API当前仅聊天，操作博客或电脑请切回Codex。`;
+  const help = () => `当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n/推理：查看编号；/推理 2：切到中等（medium）\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：检查连接\n/帮助：查看说明\n切换作用于此私人转接的所有会话，本身不调用模型。API密钥只在私有配置设置，不要发到微信。API当前仅聊天，操作博客或电脑请切回Codex。`;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
     if (!authorized(req.headers.authorization, config.workerToken)) return json(res, 401, { error: { message: 'Unauthorized' } });
@@ -244,7 +244,7 @@ export async function createWorker(config, execute = runCodex) {
           const chosen = resolveEffort(command.value);
           if (command.value && chosen && options.includes(chosen)) {
             await persist(selected, chosen);
-            answer = `推理强度已设为 ${effort}。下一条任务生效，不调用模型。`;
+            answer = `推理强度已设为 ${effortLabel(effort)}。下一条任务生效，不调用模型。发送 /推理 查看编号。`;
           } else answer = (command.value && options.length ? '该模型不支持这个推理档位。\n' : '') + await reasoningHelp(config, selected, effort);
         } else if (command.type === 'model' && command.value) {
           const chosen = resolveModel(command.value);

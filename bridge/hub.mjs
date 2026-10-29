@@ -8,7 +8,7 @@ import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { MODELS, authorized, textContent, parseCommand } from './worker.mjs';
 import { resolveModel, apiConfig } from './models.mjs';
-import { resolveEffort, reasoningOptions, reasoningHelp } from './reasoning.mjs';
+import { resolveEffort, reasoningOptions, reasoningHelp, effortLabel } from './reasoning.mjs';
 
 const TARGETS = { '服务器': 'server', server: 'server', '电脑': 'computer', computer: 'computer', pc: 'computer' };
 
@@ -56,7 +56,7 @@ export async function createHub(config) {
       res.end(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\ndata: [DONE]\n\n`);
     } else json(res, 200, { id, created, model: 'codex-local', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] });
   };
-  const help = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n推理强度：${selection.model.includes('/') ? 'API默认' : selection.effort}\n/推理：查看档位；/推理 medium：修改\n/服务器 你的要求：仅本次在服务器执行\n/电脑 你的要求：仅本次在电脑执行（离线时不转移任务）\n/执行 服务器 或 /执行 电脑：修改默认执行端\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：查看执行端在线情况\nAPI密钥保存在服务器私有配置，切换后才按API计费，不自动回退。API当前仅聊天。模型、推理与默认执行端设置适用于此私人服务的所有会话。`;
+  const help = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n推理强度：${selection.model.includes('/') ? 'API默认' : selection.effort}\n/推理：查看编号；/推理 2：切到中等（medium）\n/服务器 你的要求：仅本次在服务器执行\n/电脑 你的要求：仅本次在电脑执行（离线时不转移任务）\n/执行 服务器 或 /执行 电脑：修改默认执行端\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：查看执行端在线情况\nAPI密钥保存在服务器私有配置，切换后才按API计费，不自动回退。API当前仅聊天。模型、推理与默认执行端设置适用于此私人服务的所有会话。`;
   let busy = false;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
@@ -106,7 +106,7 @@ export async function createHub(config) {
             return answer(res, body, (command.value && options.length ? '该模型不支持这个推理档位。\n' : '') + await reasoningHelp(config, selection.model, selection.effort));
           }
           await persist({ ...selection, effort });
-          return answer(res, body, `推理强度已设为 ${effort}，从下一条任务生效，服务器和电脑执行端都会采用；重启保留，设置本身不调用模型。`);
+          return answer(res, body, `推理强度已设为 ${effortLabel(effort)}，从下一条任务生效，服务器和电脑执行端都会采用；重启保留，设置本身不调用模型。发送 /推理 查看编号。`);
         }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
