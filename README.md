@@ -4,6 +4,8 @@
 
 仓库：https://github.com/ohtautau/ottbot
 
+微信/CodeBuddy复用本机Codex登录的转接服务见 [Codex转接说明](bridge/README.md)，通过 `start-codex-bridge.cmd` 启动，与下方企微机器人独立运行。
+
 本程序采用企业微信官方 SDK：https://github.com/WecomTeam/aibot-node-sdk 。第一版仅支持文字，不接数据库。
 
 ## 1. 先测试企微连接

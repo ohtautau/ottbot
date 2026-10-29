@@ -1,0 +1,16 @@
+[Unit]
+Description=Ottbot always-on Weixin channel
+After=network-online.target ottbot-hub.service
+Wants=ottbot-hub.service
+ConditionPathExists=/home/ubuntu/ottbot-relay/shared/weixin-account.json
+
+[Service]
+Type=simple
+ExecStart=/home/ubuntu/ottbot-relay/tools/node-v24.22.2-linux-x64/bin/node /home/ubuntu/ottbot-relay/hybrid-current/weixin.mjs run /home/ubuntu/ottbot-relay/shared/weixin.json
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Ottbot server Codex executor
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/ottbot-relay
+Environment=PATH=/home/ubuntu/ottbot-relay/tools/node-v24.22.2-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/ottbot-relay/tools/node-v24.22.2-linux-x64/bin/node /home/ubuntu/ottbot-relay/hybrid-current/worker.mjs /home/ubuntu/ottbot-relay/shared/server-worker.json
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

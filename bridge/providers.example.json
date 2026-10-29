@@ -1,0 +1,16 @@
+{
+  "deepseek": {
+    "enabled": false,
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "apiKey": "",
+    "images": false,
+    "maxTokens": 2048
+  },
+  "qwen": {
+    "enabled": false,
+    "endpoint": "https://YOUR_WORKSPACE.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "apiKey": "",
+    "images": false,
+    "maxTokens": 2048
+  }
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Ottbot server and computer task router
+After=network-online.target ottbot-codex.service
+Wants=ottbot-codex.service
+
+[Service]
+Type=simple
+ExecStart=/home/ubuntu/ottbot-relay/tools/node-v24.22.2-linux-x64/bin/node /home/ubuntu/ottbot-relay/hybrid-current/hub.mjs /home/ubuntu/ottbot-relay/shared/hub.json
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

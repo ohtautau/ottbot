@@ -1,0 +1,16 @@
+[Unit]
+Description=Ottbot private Codex relay
+After=network.target
+
+[Service]
+Type=simple
+Environment=OTTBOT_RELAY_CONFIG=/home/ubuntu/ottbot-relay/shared/relay.json
+ExecStart=/usr/bin/python3 /home/ubuntu/ottbot-relay/current/relay.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

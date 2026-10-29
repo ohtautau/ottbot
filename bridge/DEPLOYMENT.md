@@ -1,0 +1,57 @@
+# GitHub 同步部署
+
+代码来源为 `https://github.com/ohtautau/ottbot.git`。仓库只存程序和空白示例，服务器密码、SSH 私钥、微信绑定、Codex 登录和 API Key 都不进入 Git。
+
+## 首次部署
+
+以 `ubuntu` 登录 Ubuntu x86_64 服务器：
+
+```sh
+git clone https://github.com/ohtautau/ottbot.git /home/ubuntu/ottbot-source
+python3 /home/ubuntu/ottbot-source/bridge/deploy-server.py
+```
+
+部署脚本校验官方 Node 与 Codex 归档，运行测试，把当前 Git 提交发布到 `~/ottbot-relay/releases/<commit>`，再切换服务。默认执行目录为 `~/ottbot-workspace`，服务器 Codex 保持只读；接入博客授权工具后另行配置。程序端口只监听 `127.0.0.1`，不对公网开放模型接口。用户级 systemd 和 linger 保证退出 SSH 后服务仍运行。
+
+默认使用 ChatGPT 账号的 Codex 登录，不配置付费 API。运行 `~/ottbot-relay/tools/paths.json` 中的 Codex 可执行文件，使用 `login --device-auth` 完成官方账号授权；浏览器登录也可通过官方 SSH 本地回调方式完成。登录完成不代表模型权限和额度验证成功，应额外做一次真实回复测试。
+
+微信绑定与游标位于 `~/ottbot-relay/shared/weixin-account.json`、`weixin-cursor.json`。从旧服务器迁移时保留原绑定，先停止旧接收服务，再经 SSH 传输这两个私有文件并启动新接收服务，避免同一绑定同时消费消息。无需重新创建机器人。迁移失败可停止新接收端后恢复旧端。
+
+```sh
+systemctl --user start ottbot-weixin.service
+systemctl --user status ottbot-codex.service ottbot-hub.service ottbot-weixin.service
+```
+
+电脑端的 SSH 目标、known_hosts 和私有转接密钥必须与新服务器一致。密钥不通过 GitHub 同步；本机 `local-state/codex-bridge/worker.json` 保留电脑 Codex 路径和工作区，修改连接目标后重启本机代理。电脑在线且代理运行才能接受 `/电脑` 任务。
+
+## 后续更新
+
+本机检查、提交并 push GitHub；服务器只拉取已提交的版本：
+
+```sh
+git -C /home/ubuntu/ottbot-source pull --ff-only
+python3 /home/ubuntu/ottbot-source/bridge/deploy-server.py
+```
+
+部署不会把微信绑定或 API Key 覆盖为空白示例，也不会修改博客数据库或公网域名。已经运行的微信进程在更新代码后需要重启；确认授权后使用 `--start-weixin` 同时重启接收端。
+
+## 微信里的模型切换
+
+- `/模型`：查看当前模型和用法。
+- `/模型 luna`、`/模型 sol`、`/模型 terra`、`/模型 astra`：ChatGPT 账号的 Codex 模型。
+- `/模型 codex/sol`：明确回到 Codex 通道。
+- `/模型 gpt-完整模型名称`：指定账号可用的其他 Codex 模型；切换不验证实际权限，真实调用失败会报告。
+- `/模型 deepseek/deepseek-flash`、`/模型 qwen/qwen-plus`：使用明确配置的 API，按提供商计费。
+- `/执行 服务器`、`/执行 电脑`：切换默认执行端。
+- `/服务器 任务`、`/电脑 任务`：指定本次执行端，离线时不转移。
+- `/清空`：清空短期对话上下文，不删除微信聊天记录或博客数据。
+
+日常文字直接发给机器人即可。对话仅保留每个执行端、每个模型最近约六轮文字上下文，重启后清空。图片仅用于本轮识别，保存到博客需另接上传授权工具。模型列表不代表账号已获得全部模型权限。
+
+## 可选付费 API
+
+服务器初始 `~/ottbot-relay/shared/providers.json` 来自 `providers.example.json`，所有 API 都禁用且无 Key。通过 SSH 私下填写提供商的完整 Chat Completions HTTPS 地址、API Key，再设 `enabled: true`，文件权限保持 `600`。Qwen 的地址需要与 Key 所属地域和业务空间一致；示例中的 `YOUR_WORKSPACE` 必须替换。
+
+API 配置每次切换和调用时读取，通常不用重启。不要把 Key 发到微信，不要把私有 `providers.json` 加进 Git。不自动充值，不在 Codex 失败时调用 API。API 当前为独立聊天适配器，不具备 Codex 的本机执行工具。
+
+官方协议依据：[微信通道](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol.md)、[Codex 认证](https://learn.chatgpt.com/docs/auth)、[DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/)、[Qwen](https://help.aliyun.com/en/model-studio/first-api-call-to-qwen)。
