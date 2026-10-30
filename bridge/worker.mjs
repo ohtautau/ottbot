@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { imageReply, readReplyImage, validateReplyImages } from './images.mjs';
+import { imageReply, readReplyImage, validateReplyImages, generatedImages } from './images.mjs';
 import { MODELS, resolveModel, apiConfig, runApi, configuredApiModels, resolveConfiguredModel } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
@@ -83,6 +83,7 @@ export function buildPrompt(request) {
     '内置生图工具的图片可直接从Codex专用generated_images目录回传，不需要复制到工作区；工作区只读不代表不能回传已生成的图片。必须以工具实际产出的文件为准，不可凭空声称生成成功。',
     '只发送用户要求的图片；图片须位于工作区（或本轮输入附件目录），支持PNG/JPEG/WebP，最多4张、单张10MB、总共20MB。不要把代码示例写成实际图片标记。没有图片文件时不要声称已发送或已生成。',
     '历史对话JSON：', JSON.stringify(request.history),
+    '执行端已存在的生成图片（最新在前；路径由转接程序核验，可直接在最终回复引用，不必运行命令查找或复制；文件名不代表内容，不确定对应关系时如实说明）：', JSON.stringify(request.generatedImages || []),
     '本轮用户请求JSON：', JSON.stringify({ text: request.text, attachedImages: request.images.length, ...(request.imagePaths ? { imagePaths: request.imagePaths } : {}) }),
   ].join('\n');
 }
@@ -128,6 +129,7 @@ export async function runCodex(config, request, model, signal) {
   if (signal?.aborted) throw new Error('请求已取消。');
   const folder = await mkdtemp(join(config.runtimeDirectory, 'request-'));
   try {
+    const availableImages = await generatedImages(config);
     const args = codexArguments(config, model);
     const imagePaths = [];
     for (let i = 0; i < request.images.length; i++) {
@@ -166,7 +168,7 @@ export async function runCodex(config, request, model, signal) {
       });
       child.stderr.resume(); // Do not copy credentials or local path diagnostics into chat/logs.
       child.stdin.on('error', () => {});
-      child.stdin.end(buildPrompt({ ...request, imagePaths }));
+      child.stdin.end(buildPrompt({ ...request, imagePaths, generatedImages: availableImages }));
       child.on('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('无法启动本机 Codex，请检查安装路径。')); });
       child.on('close', code => {
         clearTimeout(timer);
@@ -248,7 +250,12 @@ export async function createWorker(config, execute = runCodex) {
             answer = settingNotice('推理', effortShort(effort));
           } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '用法：/r 查看可用档位') : await reasoningHelp(config, selected, effort);
         } else if (command.type === 'image' && command.value) {
-          const path = command.value.replace(/^(?:"([\s\S]*)"|'([\s\S]*)'|<([\s\S]*)>)$/, (_m, a, b, c) => a || b || c);
+          let path = command.value.replace(/^(?:"([\s\S]*)"|'([\s\S]*)'|<([\s\S]*)>)$/, (_m, a, b, c) => a || b || c);
+          if (['last', 'latest', '最新', '最近'].includes(path.toLowerCase())) {
+            const latest = (await generatedImages(config))[0];
+            if (!latest) throw new Error('当前执行端没有可回传的生成图片。');
+            path = latest.path;
+          }
           images = [await readReplyImage(path, config)];
           answer = '';
         } else if (command.type === 'model' && command.value) {

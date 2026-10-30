@@ -122,10 +122,11 @@ export function formatWeixinText(text, menu = false) {
   return value.length <= 3800 ? value : value.slice(0, 3750) + '\n\n（回复过长，已截断；可分步继续提问。）';
 }
 
-export function receiptText(input, items = []) {
+export function receiptText(input, items = [], defaultTarget = 'server') {
   const text = input || items.filter(item => item.type === 3).map(item => item.voice_item?.text || '').join('\n');
   const command = parseCommand(text);
-  return !command || ['route', 'image'].includes(command.type) ? '收到，正在处理…' : '';
+  const target = command?.type === 'route' ? command.target : defaultTarget;
+  return !command || ['route', 'image'].includes(command.type) ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…` : '';
 }
 
 // Original-image upload and message format follow Tencent/openclaw-weixin's
@@ -205,7 +206,10 @@ export async function monitor(configPath) {
             await send(message, setup.text, true);
             continue; // Configuration inputs never reach models or conversation history.
           }
-          const receipt = receiptText(input, items);
+          let defaultTarget;
+          try { defaultTarget = JSON.parse(await readFile(join(directory, 'hub-runtime/hub-selection.json'), 'utf8')).target; }
+          catch (error) { if (error.code !== 'ENOENT') throw error; defaultTarget = 'server'; }
+          const receipt = receiptText(input, items, defaultTarget);
           if (receipt) await send(message, receipt).catch(() => console.error('微信接收确认发送失败，继续处理。'));
           const content = await receiveContent(message);
           const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();

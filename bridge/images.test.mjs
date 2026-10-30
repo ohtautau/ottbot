@@ -51,9 +51,11 @@ test('hub carries images from both executors; direct sends skip inference and AP
   let calls = 0;
   try {
     await writeFile(join(folder, 'photo.png'), png);
+    await mkdir(join(folder, 'generated'));
+    await writeFile(join(folder, 'generated', 'latest.png'), png);
     const providers = { custom: { enabled: true, apiKey: 'test-not-real-api-key', endpoint: 'https://api.example.com/v1/chat/completions', defaultModel: 'example' } };
     const startWorker = async target => {
-      const worker = await createWorker({ workspace: folder, runtimeDirectory: join(folder, target), workerToken: 'test-image-private-token', providers }, async () => { calls++; return '照片\n![照片](photo.png)'; });
+      const worker = await createWorker({ workspace: folder, imageRoots: [join(folder, 'generated')], runtimeDirectory: join(folder, target), workerToken: 'test-image-private-token', providers }, async () => { calls++; return '照片\n![照片](photo.png)'; });
       worker.listen(0, '127.0.0.1'); await once(worker, 'listening'); servers.push(worker); return worker;
     };
     const server = await startWorker('server'), computer = await startWorker('computer');
@@ -69,6 +71,10 @@ test('hub carries images from both executors; direct sends skip inference and AP
       assert.equal(result.ottbot_images[0].data, png.toString('base64'));
       assert.ok(!result.choices[0].message.content.includes('!['));
     }
+    assert.equal(calls, 2);
+    const lastImage = await (await chat('/img last')).json();
+    assert.equal(lastImage.ottbot_images[0].name, 'latest.png');
+    assert.equal(lastImage.ottbot_images[0].data, png.toString('base64'));
     assert.equal(calls, 2);
     const sse = await (await chat('/img photo.png', true)).text();
     assert.ok(sse.includes('ottbot_images') && sse.includes('[DONE]'));

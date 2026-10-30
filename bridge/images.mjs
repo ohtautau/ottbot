@@ -1,9 +1,30 @@
-import { open, realpath } from 'node:fs/promises';
+import { open, realpath, readdir, stat } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, basename } from 'node:path';
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_REPLY_BYTES = 20 * 1024 * 1024;
 export const MAX_REPLY_IMAGES = 4;
+
+export async function generatedImages(config) {
+  const images = [];
+  let scanned = 0;
+  async function visit(directory, depth = 0) {
+    if (depth > 4 || scanned > 1000) return;
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    for (const entry of entries) {
+      if (++scanned > 1000) break;
+      const path = resolve(directory, entry.name);
+      if (entry.isDirectory() && !entry.name.startsWith('.')) await visit(path, depth + 1);
+      else if (entry.isFile() && /\.(?:png|jpe?g|webp)$/i.test(entry.name)) {
+        const info = await stat(path);
+        if (info.size > 0 && info.size <= MAX_IMAGE_BYTES) images.push({ path, modifiedAt: info.mtimeMs });
+      }
+    }
+  }
+  for (const root of config.imageRoots || []) await visit(root);
+  return images.sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 8);
+}
 
 export function imageMime(bytes) {
   if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png';
