@@ -100,4 +100,14 @@ test('outbound images upload encrypted originals and send only to the bound conv
     transport: async () => { uploads++; return new Response('', { status: 200 }); },
   }), /0\/1/);
   assert.equal(uploads, 3);
+  await assert.rejects(sendWeixinImages(account, message, images, {
+    request: async (_base, path) => {
+      if (path.endsWith('getuploadurl')) return { upload_param: 'test' };
+      throw new Error('微信通道返回错误（ret=-1，errcode=-2）。');
+    },
+    transport: async () => new Response('', { status: 200, headers: { 'x-encrypted-param': 'test' } }),
+  }), /发送图片消息失败。[\s\S]*ret=-1/);
+  await assert.rejects(sendWeixinImages(account, message, images, {
+    request: async () => { throw new Error('secret-context-key-token'); },
+  }), error => error.message.includes('申请上传地址失败') && !error.message.includes('secret-context'));
 });

@@ -52,7 +52,10 @@ async function api(base, path, payload, token, method = 'POST', timeout = 40000)
   if (!response.ok) throw new Error(`微信通道HTTP ${response.status}`);
   const data = await response.json();
   if (data.errcode === -14 || data.ret === -14) throw new Error('WEIXIN_SESSION_EXPIRED');
-  if ((data.ret !== undefined && data.ret !== 0) || (data.errcode !== undefined && data.errcode !== 0)) throw new Error('微信通道暂时返回错误。');
+  if ((data.ret !== undefined && data.ret !== 0) || (data.errcode !== undefined && data.errcode !== 0)) {
+    const codes = ['ret', 'errcode'].filter(key => Number.isInteger(data[key])).map(key => `${key}=${data[key]}`).join('，');
+    throw new Error(`微信通道返回错误${codes ? '（' + codes + '）' : ''}。`);
+  }
   return data;
 }
 
@@ -134,9 +137,10 @@ export function receiptText(input, items = [], defaultTarget = 'server') {
 export async function sendWeixinImages(account, message, images, { request = api, transport = fetch } = {}) {
   if (message.from_user_id !== account.owner || message.group_id || message.message_type !== 1 || !message.context_token) throw new Error('图片只能回复给绑定账号的私聊。');
   const validated = validateReplyImages(images);
-  let sent = 0;
+  let sent = 0, stage = '申请上传地址', sending = false;
   try {
     for (const { bytes } of validated) {
+      stage = '申请上传地址'; sending = false;
       const key = randomBytes(16), filekey = randomBytes(16).toString('hex');
       const cipher = createCipheriv('aes-128-ecb', key, null);
       const encrypted = Buffer.concat([cipher.update(bytes), cipher.final()]);
@@ -145,19 +149,22 @@ export async function sendWeixinImages(account, message, images, { request = api
         rawsize: bytes.length, rawfilemd5: createHash('md5').update(bytes).digest('hex'),
         filesize: encrypted.length, no_need_thumb: true, aeskey: key.toString('hex'),
       }, account.token);
-      if (!upload.upload_full_url?.trim() && !upload.upload_param) throw new Error();
+      if (!upload.upload_full_url?.trim() && !upload.upload_param) throw new Error('微信未返回图片上传地址。');
       const url = trustedWeixinUrl(upload.upload_full_url?.trim() || `https://novac2c.cdn.weixin.qq.com/c2c/upload?encrypted_query_param=${encodeURIComponent(upload.upload_param)}&filekey=${encodeURIComponent(filekey)}`);
       let download;
+      stage = '上传图片';
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const response = await transport(url, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: encrypted, redirect: 'error', signal: AbortSignal.timeout(30000) });
           const param = response.headers.get('x-encrypted-param');
           await response.body?.cancel();
-          if (response.status >= 400 && response.status < 500) throw Object.assign(new Error(), { permanent: true });
-          if (response.status !== 200 || !param) throw new Error();
+          if (response.status >= 400 && response.status < 500) throw Object.assign(new Error(`CDN HTTP ${response.status}`), { permanent: true });
+          if (response.status !== 200) throw new Error(`CDN HTTP ${response.status}`);
+          if (!param) throw new Error('CDN未返回图片媒体参数。');
           download = param; break;
-        } catch (error) { if (error.permanent || attempt === 2) throw new Error(); }
+        } catch (error) { if (error.permanent || attempt === 2) throw error; }
       }
+      stage = '发送图片消息'; sending = true;
       await request(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
         from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
         context_token: message.context_token, item_list: [{ type: 2, image_item: {
@@ -167,7 +174,14 @@ export async function sendWeixinImages(account, message, images, { request = api
       sent++;
     }
     return sent;
-  } catch { throw new Error(`图片发送未完成：微信已确认 ${sent}/${validated.length} 张；请稍后重试，最后一张的送达状态可能未确认。`); }
+  } catch (error) {
+    // Only fixed diagnostics and numeric protocol codes reach chat/logs. Never
+    // include an upstream errmsg, signed CDN URL, image key, or context token.
+    const reason = /^(?:微信通道HTTP \d{3}|CDN HTTP \d{3}|微信通道返回错误(?:（(?:ret|errcode)=-?\d+(?:，(?:ret|errcode)=-?\d+)*）)?。|微信未返回图片上传地址。|CDN未返回图片媒体参数。)$/.test(error.message) ? error.message
+      : error.message === 'WEIXIN_SESSION_EXPIRED' ? '微信授权已过期。' : '网络或微信响应异常。';
+    console.error(`图片发送失败：阶段=${stage}；原因=${reason}；已确认=${sent}/${validated.length}`);
+    throw new Error(`图片发送未完成：${stage}失败。\n原因：${reason}\n已确认：${sent}/${validated.length} 张。${sending ? '\n说明：最后一张的送达状态可能未确认。' : ''}`);
+  }
 }
 
 export async function monitor(configPath) {
