@@ -99,14 +99,14 @@ def main():
             raise RuntimeError(f'{name} has a different private token; no switch was made.')
     units = Path.home() / '.config/systemd/user'
     units.mkdir(parents=True, exist_ok=True)
-    for name in ['ottbot-relay', 'ottbot-codex', 'ottbot-hub', 'ottbot-weixin', 'ottbot-ottlog']:
+    for name in ['ottbot-relay', 'ottbot-codex', 'ottbot-hub', 'ottbot-weixin']:
         (units / (name + '.service')).write_text((bridge / (name + '.service')).read_text())
     link(ROOT / 'current', bridge)
     link(ROOT / 'hybrid-current', bridge)
     run('sudo', '-n', 'loginctl', 'enable-linger', 'ubuntu')
     run('systemctl', '--user', 'daemon-reload')
-    if (shared / 'ottlog-tunnel.env').exists():
-        run('systemctl', '--user', 'enable', '--now', 'ottbot-ottlog.service')
+    if (units / 'ottbot-ottlog.service').exists():
+        run('systemctl', '--user', 'disable', '--now', 'ottbot-ottlog.service')
     for name in ['ottbot-codex', 'ottbot-hub', 'ottbot-relay']:
         run('systemctl', '--user', 'enable', name + '.service')
         run('systemctl', '--user', 'restart', name + '.service')

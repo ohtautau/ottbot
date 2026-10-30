@@ -1,5 +1,9 @@
 # GitHub 同步部署
 
+## 当前单机部署
+
+博客网页/API/Caddy及全部SQLite、图片、会话密钥卷与微信接收器、路由、Codex执行器均位于新加坡。微信私有`shared/ottlog.json`使用同机`http://127.0.0.1:8088`，原跨广州`ottbot-ottlog`隧道已禁用，部署器不会重新启用。Cookie、数据库及SSH私钥不进入Git。博客迁移的校验、空卷恢复及回滚过程见ottlog仓库`docs/singapore-deployment.md`。网页继续沿原私密预览；公网DNS与域名发布不是这次迁移的自动步骤。
+
 代码来源为 `https://github.com/ohtautau/ottbot.git`。仓库只存程序和空白示例，服务器密码、SSH 私钥、微信绑定、Codex 登录和 API Key 都不进入 Git。
 
 ## 首次部署
