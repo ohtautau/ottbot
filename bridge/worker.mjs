@@ -11,6 +11,8 @@ import { MODELS, resolveModel, apiConfig, runApi } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortLabel } from './reasoning.mjs';
 
 export { MODELS } from './models.mjs';
+import { parseCommand, helpText, notice } from './commands.mjs';
+export { parseCommand } from './commands.mjs';
 const LIMIT = 24 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
 
@@ -33,18 +35,6 @@ export function textContent(content) {
   return '';
 }
 
-export function parseCommand(text) {
-  const value = text.trim();
-  if (/^\/(?:模型|model)(?:\s|$)/i.test(value)) {
-    return { type: 'model', value: value.replace(/^\/(?:模型|model)\s*/i, '').trim().toLowerCase() };
-  }
-  if (/^\/(?:推理|思考|reasoning|effort)(?:\s|$)/i.test(value)) {
-    return { type: 'reasoning', value: value.replace(/^\/(?:推理|思考|reasoning|effort)\s*/i, '').trim().toLowerCase() };
-  }
-  if (/^\/(?:状态|status)$/i.test(value)) return { type: 'status' };
-  if (/^\/(?:帮助|help)$/i.test(value)) return { type: 'help' };
-  return null;
-}
 
 export function normalizeRequest(body) {
   if (!Array.isArray(body.messages) || body.messages.length > 300) throw new Error('messages 格式不正确或历史过长。');
@@ -77,7 +67,7 @@ export function normalizeRequest(body) {
     remaining -= text.length;
     history.unshift({ role: message.role, text });
   }
-  return { text, images, history, command: images.length ? null : parseCommand(text) };
+  return { text, images, history, command: images.length && parseCommand(text) ? { type: 'error', message: '设置指令请单独发送文字，不要附带图片。' } : parseCommand(text) };
 }
 
 export function buildPrompt(request) {
@@ -203,7 +193,7 @@ export async function createWorker(config, execute = runCodex) {
     selected = model; effort = nextEffort;
   };
   let busy = false;
-  const help = () => `当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n/推理：查看编号；/推理 2：切到中等（medium）\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：检查连接\n/帮助：查看说明\n切换作用于此私人转接的所有会话，本身不调用模型。API密钥只在私有配置设置，不要发到微信。API当前仅聊天，操作博客或电脑请切回Codex。`;
+  const help = topic => helpText(topic, `当前模型：${selected}\n推理：${selected.includes('/') ? 'API默认' : effortLabel(effort)}`);
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
     if (!authorized(req.headers.authorization, config.workerToken)) return json(res, 401, { error: { message: 'Unauthorized' } });
@@ -239,16 +229,20 @@ export async function createWorker(config, execute = runCodex) {
       let answer;
       if (request.command) {
         const command = request.command;
-        if (command.type === 'reasoning') {
+        if (command.type === 'error') {
+          answer = notice('指令错误', command.message);
+        } else if (command.type === 'help') {
+          answer = help(command.value);
+        } else if (command.type === 'reasoning') {
           const options = await reasoningOptions(config, selected);
           const chosen = resolveEffort(command.value);
           if (command.value && chosen && options.includes(chosen)) {
             await persist(selected, chosen);
-            answer = `推理强度已设为 ${effortLabel(effort)}。下一条任务生效，不调用模型。发送 /推理 查看编号。`;
-          } else answer = (command.value && options.length ? '该模型不支持这个推理档位。\n' : '') + await reasoningHelp(config, selected, effort);
+            answer = notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n/r 查看编号');
+          } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selected, effort)) : await reasoningHelp(config, selected, effort);
         } else if (command.type === 'model' && command.value) {
           const chosen = resolveModel(command.value);
-          if (!chosen) answer = `没有这个模型。\n${help()}`;
+          if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', help('model'));
           else {
             await apiConfig(config, chosen);
             const options = await reasoningOptions(config, chosen);
@@ -258,7 +252,7 @@ export async function createWorker(config, execute = runCodex) {
           }
         } else answer = request.command.type === 'status'
           ? `转接已连接，Codex 执行端可接收任务。\n当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n认证：每次模型调用前检查 ChatGPT 登录\n执行权限：${config.sandbox || 'read-only'}；博客授权接口尚未接入。\n本状态检查不验证模型额度。`
-          : help();
+          : help(command.type);
       } else answer = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
       if (res.destroyed) return;
       if (body.stream === true) {

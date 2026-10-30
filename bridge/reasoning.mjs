@@ -36,5 +36,5 @@ export async function reasoningHelp(config, model, effort) {
   if (model.includes('/')) return '当前为 API 通道，尚未接入提供商各自的推理参数；/推理 不会修改或发送 API 参数。切回 Codex 后可设置。';
   const options = await reasoningOptions(config, model);
   const menu = options.map(level => `${effortLabel(level)}${level === effort ? ' ← 当前' : ''}`).join('\n');
-  return `当前推理强度：${effortLabel(effort)}\n可用档位（编号固定，不随模型变化）：\n${menu}\n发送 /推理 数字 即可修改，例如 /推理 ${options.includes('medium') ? '2 切到 medium（中）' : '0 使用模型默认值'}。也可继续使用英文或中文档位名。\n修改从下一条任务生效，重启保留，不调用模型。档位越高通常更慢、消耗更多额度。`;
+  return `【推理设置】\n\n当前推理强度：${effortLabel(effort)}\n\n可用档位（编号固定，不随模型变化）：\n${menu}\n\n发送 /推理 数字 即可修改，例如 /推理 ${options.includes('medium') ? '2 切到 medium（中）' : '0 使用模型默认值'}。也可继续使用英文或中文档位名。\n\n修改从下一条任务生效，重启保留，不调用模型。档位越高通常更慢、消耗更多额度。`;
 }

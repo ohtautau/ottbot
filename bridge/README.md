@@ -40,3 +40,5 @@ node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs br
 ```
 
 测试使用临时配置、模拟 Codex 和 API，不调用真实付费模型、不写入博客。实际登录、照片、博客授权写入和电脑操作需要分别验收。
+
+统一指令规范见 [COMMANDS.md](COMMANDS.md)，包含中文、英文、缩写、帮助主题与参数边界。

@@ -41,6 +41,11 @@ test('server default, computer execution, persistent model selection and no offl
   let computerClosed = false;
   try {
     assert.equal((await fetch(base + '/health')).status, 401);
+    for (const text of ['/unknown', '/st extra', '/h r', '/m', '/t missing']) {
+      const result = await (await chat(text)).json();
+      assert.match(result.choices[0].message.content, /【/);
+      assert.equal(runs.length, 0);
+    }
     const missingApi = await (await chat('/模型 deepseek/deepseek-flash')).json();
     assert.match(missingApi.choices[0].message.content, /尚未配置/);
     assert.equal((await (await fetch(base + '/health', { headers })).json()).model, MODELS.sol);

@@ -10,12 +10,11 @@ import { MODELS, authorized, textContent, parseCommand } from './worker.mjs';
 import { resolveModel, apiConfig } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortLabel } from './reasoning.mjs';
 
-const TARGETS = { '服务器': 'server', server: 'server', '电脑': 'computer', computer: 'computer', pc: 'computer' };
+import { resolveTarget, helpText, notice } from './commands.mjs';
 
 export function routingCommand(text) {
-  const match = text.trim().match(/^\/(服务器|server|电脑|computer|pc)(?:\s+([\s\S]*))?$/i);
-  if (!match) return null;
-  return { target: TARGETS[match[1].toLowerCase()], text: (match[2] || '').trim() };
+  const command = parseCommand(text);
+  return command?.type === 'route' ? { target: command.target, text: command.text } : null;
 }
 
 export async function createHub(config) {
@@ -56,7 +55,8 @@ export async function createHub(config) {
       res.end(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\ndata: [DONE]\n\n`);
     } else json(res, 200, { id, created, model: 'codex-local', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] });
   };
-  const help = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n推理强度：${selection.model.includes('/') ? 'API默认' : selection.effort}\n/推理：查看编号；/推理 2：切到中等（medium）\n/服务器 你的要求：仅本次在服务器执行\n/电脑 你的要求：仅本次在电脑执行（离线时不转移任务）\n/执行 服务器 或 /执行 电脑：修改默认执行端\n/模型 luna|sol|terra|astra：Codex账号模型\n/模型 gpt-完整模型名称：其他Codex模型\n/模型 提供商/模型ID：已配置的付费API\n/状态：查看执行端在线情况\nAPI密钥保存在服务器私有配置，切换后才按API计费，不自动回退。API当前仅聊天。模型、推理与默认执行端设置适用于此私人服务的所有会话。`;
+  const currentSettings = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n推理强度：${selection.model.includes('/') ? 'API默认' : effortLabel(selection.effort)}`;
+  const help = topic => helpText(topic, currentSettings());
   let busy = false;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
@@ -89,40 +89,43 @@ export async function createHub(config) {
       const text = textContent(last.content).trim();
       const hasImages = Array.isArray(last.content) && last.content.some(part => part.type === 'image_url');
       const route = routingCommand(text);
-      const command = !hasImages && !route ? parseCommand(text) : null;
-      const targetSetting = !hasImages && text.match(/^\/(?:执行|target)(?:\s+(\S+))?$/i);
-      if (targetSetting) {
-        if (!targetSetting[1]) return answer(res, body, help());
-        const target = TARGETS[targetSetting[1].toLowerCase()];
-        if (!target) return answer(res, body, '执行端仅支持：服务器、电脑。');
+      const command = !route ? parseCommand(text) : null;
+      if (hasImages && command) return answer(res, body, notice('指令错误', '设置指令请单独发送文字，不要附带图片。图片任务可使用 /srv 或 /pc。'));
+      if (command?.type === 'target') {
+        if (!command.value) return answer(res, body, help('target'));
+        const target = resolveTarget(command.value);
+        if (!target) return answer(res, body, notice('指令错误', '执行端无效，可选：服务器 / server / srv 或 电脑 / computer / pc。', '示例：/t pc'));
         await persist({ ...selection, target });
-        return answer(res, body, `默认执行端已设为${name(target)}。\n${help()}`);
+        return answer(res, body, notice('设置成功', `默认执行端：${name(target)}`, '下一条任务生效 · 重启保留\n单次执行可用 /srv 任务 或 /pc 任务'));
       }
       if (command) {
+        if (command.type === 'error') return answer(res, body, notice('指令错误', command.message));
+        if (command.type === 'help') return answer(res, body, help(command.value));
+        if (command.type === 'clear') return answer(res, body, notice('使用提示', '请在微信入口发送 /cl 清空短期对话。当前入口没有可清空的对话记录。'));
         if (command.type === 'reasoning') {
           const options = await reasoningOptions(config, selection.model);
           const effort = resolveEffort(command.value);
           if (!command.value || !effort || !options.includes(effort)) {
-            return answer(res, body, (command.value && options.length ? '该模型不支持这个推理档位。\n' : '') + await reasoningHelp(config, selection.model, selection.effort));
+            return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selection.model, selection.effort)) : await reasoningHelp(config, selection.model, selection.effort));
           }
           await persist({ ...selection, effort });
-          return answer(res, body, `推理强度已设为 ${effortLabel(effort)}，从下一条任务生效，服务器和电脑执行端都会采用；重启保留，设置本身不调用模型。发送 /推理 查看编号。`);
+          return answer(res, body, notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n适用于服务器和电脑执行端\n/r 查看编号')); 
         }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
-          if (!model) return answer(res, body, `没有这个模型。\n${help()}`);
+          if (!model) return answer(res, body, notice('指令错误', '模型名称无效，原设置保持。', help('model')));
           try { await apiConfig(config, model); }
           catch (error) { return answer(res, body, error.message); }
           const options = await reasoningOptions(config, model);
           const effort = !options.length || options.includes(selection.effort) ? selection.effort : 'auto';
           await persist({ ...selection, model, effort });
-          return answer(res, body, `已切换到 ${model}。下一条普通消息生效；切换不调用模型。${model.includes('/') ? '\n这是独立API通道，按该提供商计费，当前仅聊天。' : `\n推理强度：${effort}；发送 /推理 查看。\n使用ChatGPT账号的Codex额度；实际模型权限需调用验证。`}`);
+          return answer(res, body, `【设置成功】\n\n当前模型：${model}\n下一条消息生效 · 切换不调用模型\n${model.includes('/') ? '\n这是独立API通道，按该提供商计费，当前仅聊天。' : `\n推理强度：${effort}；发送 /推理 查看。\n使用ChatGPT账号的Codex额度；实际模型权限需调用验证。`}`);
         }
         if (command.type === 'status') {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
-          return answer(res, body, `服务器接收端在线。\n服务器执行进程：${remote ? '在线' : '未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '已登录（额度需调用验证）' : remote?.authenticated === false ? '未登录' : '尚未验证'}\n电脑执行端：${computer ? '在线' : '离线'}\n${help()}`);
+          return answer(res, body, notice('运行状态', `服务器接收端在线\n服务器执行进程：${remote ? '在线' : '未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '已登录（额度需调用验证）' : remote?.authenticated === false ? '未登录' : '尚未验证'}\n电脑执行端：${computer ? '在线' : '离线'}`, currentSettings(), '/h 帮助　/m 模型　/r 推理　/t 执行端'));
         }
-        return answer(res, body, help());
+        return answer(res, body, help(command.type));
       }
       const target = route?.target || selection.target;
       if (route && !route.text && !hasImages) return answer(res, body, `请在 /${name(target)} 后写要执行的任务。`);

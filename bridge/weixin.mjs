@@ -142,12 +142,13 @@ export async function monitor(configPath) {
         try {
           const content = await receiveContent(message);
           const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
-          if (/^\/(?:清空|clear)$/i.test(plainText) && content.every(part => part.type === 'text')) {
+          if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {
             histories.clear();
-            await send(message, '已清空本接收进程的短期对话上下文。微信聊天记录和已保存的博客内容不会删除。');
+            await send(message, '【清空成功】\n\n已清空短期对话上下文。\n微信聊天记录和博客数据保留。');
             continue;
           }
-          const command = parseCommand(plainText) || /^\/(?:执行|target)(?:\s|$)/i.test(plainText);
+          const parsed = parseCommand(plainText);
+          const command = parsed && parsed.type !== 'route';
           let history = [];
           if (!command) {
             let target = routingCommand(plainText)?.target;

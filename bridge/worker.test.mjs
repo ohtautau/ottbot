@@ -6,6 +6,23 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { createWorker, MODELS, normalizeRequest, parseCommand, authorized, buildPrompt, codexArguments } from './worker.mjs';
 import { resolveEffort, reasoningOptions } from './reasoning.mjs';
+import { COMMANDS, parseCommand as parseUnified, resolveTarget, helpText } from './commands.mjs';
+
+test('shared command contract: aliases, boundaries, task preservation and help', () => {
+  for (const entry of COMMANDS) for (const alias of entry.aliases) {
+    const parsed = parseUnified('/' + alias.toUpperCase());
+    assert.equal(parsed.type, ['server', 'computer'].includes(entry.type) ? 'route' : entry.type);
+  }
+  assert.deepEqual(parseUnified(' ／R 2 '), { type: 'reasoning', value: '2' });
+  assert.deepEqual(parseUnified('/SRV Keep Case\n/m sol'), { type: 'route', target: 'server', text: 'Keep Case\n/m sol' });
+  assert.deepEqual(parseUnified('/h r'), { type: 'help', value: 'reasoning' });
+  assert.equal(resolveTarget('PC'), 'computer');
+  assert.equal(resolveTarget('srv'), 'server');
+  for (const text of ['2', '解释 /r 2', '//m sol', 'https://example.com']) assert.equal(parseUnified(text), null);
+  for (const text of ['/unknown', '/st extra', '/cl yes', '/r 2 extra']) assert.equal(parseUnified(text).type, 'error');
+  assert.match(helpText('reasoning'), /\/r 2/);
+  assert.match(helpText(), /中文 \/ 英文 \/ 缩写/);
+});
 
 test('exact commands and authentication', () => {
   assert.deepEqual(parseCommand('/模型 luna'), { type: 'model', value: 'luna' });
