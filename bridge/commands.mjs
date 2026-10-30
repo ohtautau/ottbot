@@ -87,7 +87,7 @@ export function statusText(state) {
     ['服务器', state.serverOnline ? '✓ 在线' : '✗ 离线'],
     ['账号登录', login],
     ['电脑', state.computerOnline ? '✓ 在线' : '✗ 离线'],
-  ]), `默认：${state.target === 'computer' ? '电脑' : '服务器'}\n模型：${modelLabel(state.model)}\n推理：${state.effortText}`, commandItem('/h', '帮助'));
+  ]), `默认：${state.target === 'computer' ? '电脑' : '服务器'}\n模型：${modelLabel(state.model)}\n推理：${state.effortText}`);
 }
 
 export function helpText(topic = '', state = {}, detailed = false) {
