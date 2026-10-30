@@ -54,7 +54,9 @@ export function textTable(headers, rows) {
   const data = [...(headers ? [headers] : []), ...rows].map(row => row.map(clean));
   if (!data.length) return '';
   const width = Math.max(...data.map(row => displayWidth(row[0])));
-  return data.map(row => row[0] + ' '.repeat(width - displayWidth(row[0]) + 3) + row[1]).join('\n');
+  // Menu labels are Chinese: pad with ideographic spaces, not ASCII spaces.
+  // Two ASCII spaces need not have the same rendered width as one CJK glyph.
+  return data.map(row => row[0] + '\u3000'.repeat(Math.ceil((width - displayWidth(row[0])) / 2) + 1) + row[1]).join('\n');
 }
 
 export const compactRows = rows => textTable(null, rows);
@@ -83,7 +85,7 @@ export function statusText(state) {
   return notice('状态', compactRows([
     ['接收端', '✓ 在线'],
     ['服务器', state.serverOnline ? '✓ 在线' : '✗ 离线'],
-    ['Codex', login],
+    ['账号登录', login],
     ['电脑', state.computerOnline ? '✓ 在线' : '✗ 离线'],
   ]), `默认：${state.target === 'computer' ? '电脑' : '服务器'}\n模型：${modelLabel(state.model)}\n推理：${state.effortText}`, commandItem('/h', '帮助'));
 }
@@ -117,7 +119,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
   if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '说明：连接正常不代表模型额度充足。');
   if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留：微信聊天记录和博客数据。');
   if (topic === 'aliases') return notice('指令别名', commandRows(COMMANDS.map(item => {
-    return [item.aliases.filter(alias => /^[a-z?]+$/.test(alias)).map(alias => '/' + alias).join('  '), item.aliases.filter(alias => /[\u4e00-\u9fff]/.test(alias)).map(alias => '/' + alias).join(' ')];
+    return [item.aliases.filter(alias => /^[a-z?]+$/.test(alias)).map(alias => '/' + alias).join('  '), item.aliases.filter(alias => /[\u4e00-\u9fff]/.test(alias)).join('、')];
   })), '说明：每行写法等价；英文命令忽略大小写。');
   return notice('帮助', commandRows([
     ['/st', '查看状态'], ['/m [模型]', '查看或切换模型'], ['/r [档位]', '查看或调整推理'], ['/t [执行端]', '查看或设置默认端'],
