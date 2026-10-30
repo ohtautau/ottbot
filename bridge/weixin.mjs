@@ -113,6 +113,13 @@ async function receiveContent(message) {
   return content;
 }
 
+export function formatWeixinText(text, menu = false) {
+  // Some desktop clients collapse a single newline when displaying bot menus.
+  // Paragraph boundaries remain explicit. Keep normal model replies unchanged.
+  const value = menu ? text.replace(/\r\n?/g, '\n').replace(/\n+/g, '\n\n') : text;
+  return value.length <= 3800 ? value : value.slice(0, 3750) + '\n\n（回复过长，已截断；可分步继续提问。）';
+}
+
 export async function monitor(configPath) {
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   const directory = dirname(configPath);
@@ -124,9 +131,9 @@ export async function monitor(configPath) {
   let state = { cursor: '', seen: [] };
   try { state = JSON.parse(await readFile(cursorFile, 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const send = (message, text) => api(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
+  const send = (message, text, menu = false) => api(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
     from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
-    context_token: message.context_token, item_list: [{ type: 1, text_item: { text: text.length <= 3800 ? text : text.slice(0, 3750) + '\n（回复过长，已截断；可分步继续提问。）' } }],
+    context_token: message.context_token, item_list: [{ type: 1, text_item: { text: formatWeixinText(text, menu) } }],
   } }, account.token);
   console.log('微信服务器接收端启动，仅接受扫码账号的私聊。');
   for (;;) {
@@ -144,7 +151,7 @@ export async function monitor(configPath) {
           const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
           if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {
             histories.clear();
-            await send(message, '【清空成功】\n\n已清空短期对话上下文。\n微信聊天记录和博客数据保留。');
+            await send(message, '【清空成功】\n\n已清空短期对话上下文。\n微信聊天记录和博客数据保留。', true);
             continue;
           }
           const parsed = parseCommand(plainText);
@@ -165,7 +172,7 @@ export async function monitor(configPath) {
           const target = response.headers.get('x-ottbot-target');
           const text = response.ok ? result.choices?.[0]?.message?.content : result.error?.message;
           if (!text) throw new Error('执行端未返回明确结果。');
-          await send(message, (target ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n` : '') + text);
+          await send(message, (target ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n` : '') + text, Boolean(command));
           if (response.ok && target) histories.set(`${target}:${response.headers.get('x-ottbot-model')}`, [...history,
             { role: 'user', content: plainText.slice(0, 6000) || '（发送了照片，历史中不保留原图片）' },
             { role: 'assistant', content: text.slice(0, 6000) },

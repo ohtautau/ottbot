@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, randomBytes } from 'node:crypto';
-import { trustedWeixinUrl, decodeImage } from './weixin.mjs';
+import { trustedWeixinUrl, decodeImage, formatWeixinText } from './weixin.mjs';
+
+test('Weixin menus use stable paragraph breaks without changing alignment or model replies', () => {
+  const menu = '【默认执行端】\r\n\r\n/t srv   服务器  ← 当前\r\n/t pc    电脑';
+  const expected = '【默认执行端】\n\n/t srv   服务器  ← 当前\n\n/t pc    电脑';
+  assert.equal(formatWeixinText(menu, true), expected);
+  assert.equal(formatWeixinText(expected, true), expected);
+  assert.equal(formatWeixinText(menu.replace(/\r/g, ''), true), expected);
+  const answer = '说明\n```js\nconst a = 1;\n```';
+  assert.equal(formatWeixinText(answer), answer);
+  assert.ok(formatWeixinText(('一行\n').repeat(2000), true).length <= 3800);
+});
 
 test('Weixin URLs reject non-Tencent hosts, redirects, plaintext and credentials', () => {
   assert.equal(trustedWeixinUrl('https://ilinkai.weixin.qq.com/ilink/bot/getupdates').hostname, 'ilinkai.weixin.qq.com');
