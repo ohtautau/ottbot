@@ -4,20 +4,43 @@ export const MODELS = Object.freeze({
   luna: 'gpt-6-luna', terra: 'gpt-6.1-terra', sol: 'gpt-6.1-sol', astra: 'gpt-6-astra',
 });
 export const MODEL_CHOICES = Object.freeze({ '1': 'luna', '2': 'sol', '3': 'terra', '4': 'astra' });
+export const API_MODEL_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,149}$/;
 
 export function resolveModel(value) {
-  if (typeof value !== 'string' || value.length > 150) return null;
+  if (typeof value !== 'string' || value.length > 200) return null;
   const name = value.replace(/^codex\//, '');
   if (Object.hasOwn(MODEL_CHOICES, name)) return MODELS[MODEL_CHOICES[name]];
   if (Object.hasOwn(MODELS, name)) return MODELS[name];
   if (/^(?:gpt-|codex-|o[1-9])[a-z0-9._-]+$/.test(name)) return name;
-  if (/^[a-z][a-z0-9_-]{0,31}\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value)) return value;
+  const slash = value.indexOf('/');
+  if (slash > 0 && /^[a-z][a-z0-9_-]{0,31}$/.test(value.slice(0, slash)) && API_MODEL_ID.test(value.slice(slash + 1))) return value;
   return null;
+}
+
+async function providersFor(config) {
+  if (!config.providersFile) return config.providers || {};
+  try { return JSON.parse(await readFile(config.providersFile, 'utf8')); }
+  catch { throw new Error('API 配置暂时无法读取。'); }
+}
+
+export async function configuredApiModels(config) {
+  const providers = await providersFor(config);
+  return Object.entries(providers).filter(([provider, item]) => /^[a-z][a-z0-9_-]{0,31}$/.test(provider) && item?.enabled && item.apiKey)
+    .flatMap(([provider, item]) => [...new Set([item.defaultModel, ...(Array.isArray(item.models) ? item.models : [])])]
+      .filter(id => typeof id === 'string' && API_MODEL_ID.test(id))
+      .map(id => ({ model: `${provider}/${id}`, provider, id }))).slice(0, 50);
+}
+
+export async function resolveConfiguredModel(config, value) {
+  const resolved = resolveModel(value);
+  if (resolved) return resolved;
+  return (await configuredApiModels(config)).find(item => item.provider === value.toLowerCase())?.model || null;
 }
 
 export async function apiConfig(config, model) {
   if (!model.includes('/')) return null;
-  const [provider, id] = model.split('/');
+  const slash = model.indexOf('/');
+  const provider = model.slice(0, slash), id = model.slice(slash + 1);
   let providers = config.providers || {};
   if (config.providersFile) {
     try { providers = JSON.parse(await readFile(config.providersFile, 'utf8')); }

@@ -15,11 +15,13 @@ test('Codex aliases, full model IDs and explicit API provider are distinct', () 
   assert.equal(resolveModel('codex/sol'), 'gpt-6.1-sol');
   assert.equal(resolveModel('gpt-future-model'), 'gpt-future-model');
   assert.equal(resolveModel('deepseek/deepseek-flash'), 'deepseek/deepseek-flash');
+  assert.equal(resolveModel('custom/vendor/model:version'), 'custom/vendor/model:version');
   for (const value of ['invalid', '--config=x', 'https://example.com', 'deepseek/model --flag', 'constructor']) assert.equal(resolveModel(value), null);
 });
 
 test('API missing key, unsafe endpoint or unsupported images fail before network access', async () => {
   await assert.rejects(apiConfig({}, 'deepseek/model'), /尚未配置/);
+  assert.equal((await apiConfig(config, 'deepseek/vendor/model:version')).id, 'vendor/model:version');
   await assert.rejects(apiConfig({ providers: { deepseek: { ...config.providers.deepseek, endpoint: 'http://api.deepseek.com/chat/completions' } } }, 'deepseek/model'), /HTTPS/);
   let calls = 0;
   const transport = async () => { calls++; throw new Error('must not run'); };

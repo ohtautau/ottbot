@@ -54,6 +54,16 @@ python3 /home/ubuntu/ottbot-source/bridge/deploy-server.py
 
 服务器初始 `~/ottbot-relay/shared/providers.json` 来自 `providers.example.json`，所有 API 都禁用且无 Key。通过 SSH 私下填写提供商的完整 Chat Completions HTTPS 地址、API Key，再设 `enabled: true`，文件权限保持 `600`。Qwen 的地址需要与 Key 所属地域和业务空间一致；示例中的 `YOUR_WORKSPACE` 必须替换。
 
-API 配置每次切换和调用时读取，通常不用重启。不要把 Key 发到微信，不要把私有 `providers.json` 加进 Git。不自动充值，不在 Codex 失败时调用 API。API 当前为独立聊天适配器，不具备 Codex 的本机执行工具。
+API 配置每次切换和调用时读取，通常不用重启。只在绑定微信的 `/api add` 专用步骤填写 Key，不在普通对话粘贴；微信聊天记录仍可能保留。不要把私有 `providers.json` 加进 Git。不自动充值，不在 Codex 失败时调用 API。API 当前为独立聊天适配器，不具备 Codex 的本机执行工具。
 
 官方协议依据：[微信通道](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol.md)、[Codex 认证](https://learn.chatgpt.com/docs/auth)、[DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/)、[Qwen](https://help.aliyun.com/en/model-studio/first-api-call-to-qwen)。
+
+## 微信分步配置 API
+
+仅绑定账号私聊可用。发送 `/api add`，依次填写提供商英文标识、完整 HTTPS Chat Completions 地址、API Key、模型 ID；发送“确认”或 `/api save` 后原子保存到服务器 `shared/providers.json`（600权限）。同名提供商更新并保留已登记模型列表。
+
+配置期间所有输入都由接收端消费，不进入模型或对话历史；Key 不回显，不写日志或待确认文件。微信平台聊天记录仍可能保留输入，用户可自行处理。等待配置时不执行其他任务；`/api cancel` 放弃并恢复普通对话。
+
+十分钟超时或接收服务重启后，非敏感的待配置标记会继续拦截输入，直到 `/api add` 重新开始或 `/api cancel` 明确退出，避免迟到的 Key 成为普通聊天。待确认值只在内存，不复制 Codex 登录或博客管理员凭据。
+
+保存不调用付费 API、不自动切换。发送 `/m 提供商/模型ID` 或 `/m 提供商` 明确选择后，普通消息才调用对应 API。`/api list` 只返回提供商、模型和 Key 是否已填写。已配置 API 会显示在 `/m` 菜单，所有模型显示提供商与完整模型 ID；别名没有披露固定版本时不猜测底层版本。

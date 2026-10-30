@@ -17,8 +17,8 @@ test('shared command contract: aliases, boundaries, task preservation and help',
   assert.deepEqual(parseUnified('/SRV Keep Case\n/m sol'), { type: 'route', target: 'server', text: 'Keep Case\n/m sol' });
   assert.deepEqual(parseUnified('/h r'), { type: 'help', value: 'reasoning' });
   assert.deepEqual(parseUnified('/h a'), { type: 'help', value: 'aliases' });
-  assert.deepEqual(parseUnified('/h 语法'), { type: 'help', value: 'syntax' });
-  assert.deepEqual(parseUnified('/help syntax'), { type: 'help', value: 'syntax' });
+  assert.equal(parseUnified('/h 语法').type, 'error');
+  assert.deepEqual(parseUnified('/api add'), { type: 'api', value: 'add' });
   assert.equal(resolveTarget('PC'), 'computer');
   assert.equal(resolveTarget('srv'), 'server');
   for (const text of ['2', '解释 /r 2', '//m sol', 'https://example.com']) assert.equal(parseUnified(text), null);
@@ -28,13 +28,16 @@ test('shared command contract: aliases, boundaries, task preservation and help',
   assert.equal(aligned[0].indexOf('/'), aligned[1].indexOf('/'));
   assert.ok(aligned.every(line => !line.slice(0, line.indexOf('/')).includes(' ')));
   assert.match(helpText('target'), /说明：电脑离线不转交其他机器。/);
-  assert.match(helpText('syntax'), /必填[\u3000 ]+<参数>/);
-  assert.match(helpText('syntax'), /可选[\u3000 ]+\[参数\]/);
-  assert.match(helpText('syntax'), /二选一[\u3000 ]+选项A\|选项B/);
+  for (const topic of ['model', 'reasoning', 'target']) {
+    const view = helpText(topic, {}, true);
+    for (const section of ['用法：', '作用：', '参数：', '示例：', '说明：']) assert.ok(view.includes(section));
+  }
+
+
   assert.match(helpText(), /中文 \/ 英文 \/ 缩写/);
   const menu = helpText('model', { model: MODELS.sol });
-  assert.match(menu, /\/m 2\u3000+Sol +← 当前/);
-  assert.match(menu, /\/m 3\u3000+Terra/);
+  assert.match(menu, /\/m 2\u3000+OpenAI · gpt-6\.1-sol +← 当前/);
+  assert.match(menu, /\/m 3\u3000+OpenAI · gpt-6\.1-terra/);
   assert.doesNotMatch(menu, /模型[一二三四]|示例：|英文参数与 API/);
   assert.ok(menu.split('\n').length <= 14);
   assert.doesNotMatch(menu, /────────|│|项目 +内容|指令 +说明/);

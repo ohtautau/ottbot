@@ -10,6 +10,7 @@ export const COMMANDS = Object.freeze([
   { type: 'server', aliases: ['服务器', 'server', 'srv', 's'] },
   { type: 'computer', aliases: ['电脑', '本机', 'computer', 'pc', 'c'] },
   { type: 'clear', aliases: ['清空', '清除', 'clear', 'cl'] },
+  { type: 'api', aliases: ['接口', 'api', 'ap'] },
 ]);
 const lookup = new Map();
 for (const item of COMMANDS) for (const alias of item.aliases) {
@@ -30,6 +31,7 @@ export function parseCommand(text) {
   const type = lookup.get(match?.[1].toLowerCase());
   if (!type) return { type: 'error', message: '未知指令。发送 /帮助 或 /h 查看用法；发送以 // 开头的内容可作为普通聊天。' };
   let argument = (match[2] || '').trim();
+  if (type === 'api') return { type, value: argument };
   if (['server', 'computer'].includes(type)) return { type: 'route', target: type, text: argument };
   if (['status', 'clear'].includes(type)) {
     return argument ? { type: 'error', message: `/${match[1]} 不接受参数。发送 /h 查看用法。` } : { type };
@@ -37,8 +39,7 @@ export function parseCommand(text) {
   if (argument && /\s/.test(argument)) return { type: 'error', message: '该设置指令只接受一个参数。示例：/m sol、/r 2、/t pc。' };
   if (type === 'help' && argument) {
     const name = argument.toLowerCase().replace(/^[\/／]/, '');
-    const topic = ['a', 'alias', 'aliases', '别名'].includes(name) ? 'aliases'
-      : ['syntax', 'notation', '语法', '约定'].includes(name) ? 'syntax' : lookup.get(name);
+    const topic = ['a', 'alias', 'aliases', '别名'].includes(name) ? 'aliases' : lookup.get(name);
     return topic ? { type: 'help', value: topic } : { type: 'error', message: '未找到这个帮助主题。发送 /h 查看全部指令。' };
   }
   if (type === 'reasoning' || type === 'target' || /^(?:luna|sol|terra|astra|codex\/(?:luna|sol|terra|astra))$/i.test(argument)) argument = argument.toLowerCase();
@@ -73,7 +74,15 @@ export function commandItem(command, description) {
 
 export function modelLabel(model = '') {
   const entry = Object.entries(MODELS).find(([, id]) => id === model);
-  return entry ? entry[0][0].toUpperCase() + entry[0].slice(1) : model;
+  if (entry || !model.includes('/')) return `OpenAI · ${model}`;
+  const index = model.indexOf('/');
+  const provider = model.slice(0, index);
+  const names = { deepseek: 'DeepSeek', qwen: 'Qwen', openai: 'OpenAI' };
+  return `${Object.hasOwn(names, provider) ? names[provider] : provider} · ${model.slice(index + 1)}`;
+}
+
+function usageHelp(title, usage, purpose, parameters, examples, notes) {
+  return notice(title, `用法：${usage}\n作用：${purpose}`, '参数：\n' + commandRows(parameters), '示例：\n' + commandRows(examples), '说明：' + notes);
 }
 
 export function settingNotice(label, value, note = '生效：下一条任务，重启保留。') {
@@ -94,18 +103,23 @@ export function helpText(topic = '', state = {}, detailed = false) {
   const model = state.model || '';
   const current = model ? `当前：${modelLabel(model)}` : '';
   const choices = Object.values(MODEL_CHOICES).map(alias => MODELS[alias]);
-  if (topic === 'syntax') return notice('用法约定', commandRows([
-    ['<参数>', '必填'], ['[参数]', '可选'], ['选项A|选项B', '二选一'],
-  ]), commandRows([
-    ['/srv <任务>', '必须填写任务'], ['/h [主题]', '省略主题查看总帮助'], ['/t [服务器|电脑]', '填写时二选一，省略则查看'],
-  ]), '说明：括号不用输入；| 两侧只选一个。\n示例：/srv 查看目录、/h、/h m、/t 电脑');
   if (topic === 'model') {
     const menu = compactRows(choices.map((id, index) => [`/m ${index + 1}`, modelLabel(id) + (id === model ? '  ← 当前' : '')]));
-    return notice('模型', current, menu);
+    if (detailed) return usageHelp('模型用法', '/m [模型]', '查看或切换后续对话模型。',
+      [['省略', '查看模型菜单'], ['1 / 2 / 3 / 4', '账号模型编号'], ['提供商/模型ID', '已配置的 API 模型']],
+      [['/m', '查看菜单'], ['/m 2', '选择账号的 Sol'], ['/m qwen/qwen-plus', '选择已配置 API']],
+      '[模型] 可选，括号不用输入。API 先用 /api add 配置；切换后按提供商计费，不自动回退。');
+    const apis = (state.apiModels || []).map(item => [`/m ${item.model}`, modelLabel(item.model) + (item.model === model ? '  ← 当前' : '')]);
+    return notice('模型', current, menu, apis.length ? 'API 模型：\n' + compactRows(apis) : '');
   }
-  if (topic === 'reasoning') return notice('推理用法', commandRows([
-    ['/r', '查看本模型可用档位'], ['/r 2', '中等推理'], ['/r auto', '模型默认'],
-  ]), '用法：/r [档位]\n参数：支持中文、英文，例如 /推理 中、/r medium。\n编号：固定；不支持的档位不会保存。\n限制：API 通道的推理参数暂未接入。');
+  if (topic === 'reasoning') return usageHelp('推理用法', '/r [档位]', '查看或修改后续任务的推理强度。',
+    [['省略', '查看本模型可用档位'], ['0', '模型默认'], ['1 / 2 / 3', '低 / 中 / 高'], ['4 / 5 / 6', '超高 / 最大 / 极致']],
+    [['/r', '查看档位'], ['/r 2', '设置中等'], ['/r auto', '使用模型默认']],
+    '[档位] 可选，也可输入中文或英文名称。只接受本模型支持的档位；API 推理参数暂未接入。');
+  if (topic === 'target' && detailed) return usageHelp('执行端用法', '/t [服务器|电脑]', '查看或设置后续任务的默认执行位置。',
+    [['省略', '查看当前默认端'], ['服务器 / srv', '交给服务器'], ['电脑 / pc', '交给在线电脑']],
+    [['/t', '查看默认端'], ['/t 电脑', '默认使用电脑'], ['/srv <任务>', '仅本次使用服务器']],
+    '[参数] 可选，A|B 二选一，括号和 | 不用输入；<任务> 必填。电脑离线不转交其他机器。');
   if (topic === 'target') return notice('默认执行端', state.target ? `当前：${state.target === 'computer' ? '电脑' : '服务器'}` : '',
     compactRows([['服务器', '/t srv' + (state.target === 'server' ? '  ← 当前' : '')], ['电脑', '/t pc' + (state.target === 'computer' ? '  ← 当前' : '')]]),
     detailed ? '用法：/t [服务器|电脑]\n说明：省略参数查看，填写时二选一。\n别名：/执行 服务器、/t 电脑。\n说明：只影响后续任务；电脑离线不转交其他机器。\n单次指定：/srv <任务> 或 /pc <任务>' : '单次指定：/srv <任务> 或 /pc <任务>\n说明：电脑离线不转交其他机器。');
@@ -114,12 +128,15 @@ export function helpText(topic = '', state = {}, detailed = false) {
   ]), '说明：可写多行任务；不改变默认执行端。');
   if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '说明：连接正常不代表模型额度充足。');
   if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留：微信聊天记录和博客数据。');
+  if (topic === 'api') return notice('API 配置', commandRows([
+    ['/api add', '新增或修改提供商'], ['/api list', '查看已配置提供商'], ['/api cancel', '取消配置'],
+  ]), '说明：仅在绑定账号的微信私聊中配置。按提示填写提供商、接口、Key、模型；不回显 Key，不自动调用或切换。');
   if (topic === 'aliases') return notice('指令别名', commandRows(COMMANDS.map(item => {
     return [item.aliases.filter(alias => /^[a-z?]+$/.test(alias)).map(alias => '/' + alias).join('  '), item.aliases.filter(alias => /[\u4e00-\u9fff]/.test(alias)).join('、')];
   })), '说明：每行写法等价；英文命令忽略大小写。');
   return notice('帮助', commandRows([
     ['/st', '查看状态'], ['/m [模型]', '查看或切换模型'], ['/r [档位]', '查看或调整推理'], ['/t [执行端]', '查看或设置默认端'],
     ['/srv <任务>', '服务器任务'], ['/pc <任务>', '电脑任务'], ['/cl', '清空上下文'],
-    ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'], ['/h 语法', '参数约定'],
+    ['/api', '配置模型 API'], ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'],
   ]), '示例：/m 2、/r 2、/t pc\n中文 / 英文 / 缩写：/h a');
 }

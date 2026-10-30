@@ -16,10 +16,11 @@
 - `/模型 deepseek/deepseek-flash`、`/模型 qwen/qwen-plus`：使用服务器已配置的付费 API。
 - `/模型 codex/sol`：回到 Codex 账号通道。
 - `/清空`：清空接收进程的短期对话上下文。
+- `/api add`：在绑定微信私聊中分步配置提供商、接口、API Key、模型；确认后保存。`/api list` 查看，`/api cancel` 取消。
 
 日常聊天直接发送文字即可。模型与默认执行端设置适用于此私人服务的所有会话。不同执行端、不同模型的历史分开保存，重启清空；本轮最多四张 PNG/JPEG/WebP 照片，每张不超过 10MB。照片识别不等于已保存到博客。
 
-Codex 通道每次调用前验证 ChatGPT 登录，忽略 API Key 环境变量，不回退到付费 API。API 需要先在服务器私有 `shared/providers.json` 中明确启用并配置 Key；未配置时拒绝切换。API 当前仅聊天和已启用的图片输入，未接博客或电脑工具。不要把 API Key 发到微信。
+Codex 通道每次调用前验证 ChatGPT 登录，忽略 API Key 环境变量，不回退到付费 API。API 需要先在服务器私有 `shared/providers.json` 中明确启用并配置 Key；未配置时拒绝切换。API 当前仅聊天和已启用的图片输入，未接博客或电脑工具。API Key 仅在 `/api add` 的专用步骤填写，不回显、不传入模型或对话历史；微信自身聊天记录仍可能保留。
 
 服务器 Codex 默认只读；电脑权限以本机私有配置的沙箱和工作区为准。博客写入需要单独接入经过认证的内容、上传等接口；图形界面控制尚未接入。失败时如实报告，不能把通道连通当作操作成功。
 
@@ -36,7 +37,7 @@ CodeBuddy 自定义模型填写本机 `local-state/codex-bridge/codebuddy-settin
 ## 验证
 
 ```sh
-node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs bridge/models.test.mjs
+node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs bridge/models.test.mjs bridge/api-setup.test.mjs
 ```
 
 测试使用临时配置、模拟 Codex 和 API，不调用真实付费模型、不写入博客。实际登录、照片、博客授权写入和电脑操作需要分别验收。

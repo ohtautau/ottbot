@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { realpathSync } from 'node:fs';
 import { routingCommand } from './hub.mjs';
 import { parseCommand } from './worker.mjs';
+import { createApiSetup } from './api-setup.mjs';
 
 const API = 'https://ilinkai.weixin.qq.com';
 const CHANNEL_VERSION = '2.4.8';
@@ -124,6 +125,7 @@ export async function monitor(configPath) {
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   const directory = dirname(configPath);
   const account = JSON.parse(await readFile(join(directory, 'weixin-account.json'), 'utf8'));
+  const apiSetup = await createApiSetup({ providersFile: join(directory, 'providers.json'), pendingFile: join(directory, 'api-setup-pending.json') });
   trustedWeixinUrl(account.baseUrl);
   if (!account.token || !account.owner) throw new Error('微信尚未绑定。');
   const cursorFile = join(directory, 'weixin-cursor.json');
@@ -147,6 +149,13 @@ export async function monitor(configPath) {
         // Persist receipt before invoking any execution; a restart never repeats a control task.
         await atomicJson(cursorFile, state);
         try {
+          const items = message.item_list || [];
+          const input = items.filter(item => item.type === 1).map(item => item.text_item?.text || '').join('\n').trim();
+          const setup = await apiSetup.handle(input, items.some(item => item.type !== 1));
+          if (setup.handled) {
+            await send(message, setup.text, true);
+            continue; // Configuration inputs never reach models or conversation history.
+          }
           const content = await receiveContent(message);
           const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
           if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {

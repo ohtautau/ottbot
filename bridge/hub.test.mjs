@@ -30,6 +30,7 @@ test('server default, computer execution, persistent model selection and no offl
   const remote = await startWorker('server');
   const computer = await startWorker('computer');
   const config = { workerToken: token, runtimeDirectory: join(folder, 'hub'),
+    providers: { qwen: { enabled: true, apiKey: 'test-qwen-key-not-real', endpoint: 'https://api.example.com/chat/completions', defaultModel: 'qwen-plus' } },
     serverWorkerUrl: `http://127.0.0.1:${remote.address().port}`,
     computerWorkerUrl: `http://127.0.0.1:${computer.address().port}` };
   const hub = await createHub(config);
@@ -49,6 +50,14 @@ test('server default, computer execution, persistent model selection and no offl
     const missingApi = await (await chat('/模型 deepseek/deepseek-flash')).json();
     assert.match(missingApi.choices[0].message.content, /尚未配置/);
     assert.equal((await (await fetch(base + '/health', { headers })).json()).model, MODELS.sol);
+    const modelMenu = (await (await chat('/m')).json()).choices[0].message.content;
+    assert.match(modelMenu, /OpenAI · gpt-6\.1-sol/);
+    assert.match(modelMenu, /Qwen · qwen-plus/);
+    assert.ok(!modelMenu.includes('test-qwen-key-not-real'));
+    await (await chat('/m qwen')).body.cancel();
+    assert.equal((await (await fetch(base + '/health', { headers })).json()).model, 'qwen/qwen-plus');
+    assert.equal((await chat('/pc do not send server API credentials to computer')).status, 400);
+    assert.equal(runs.length, 0);
     await (await chat('/m 1')).body.cancel();
     await (await chat('/推理 3')).body.cancel();
     const invalidEffort = await (await chat('/推理 6')).json();

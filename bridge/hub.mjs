@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { MODELS, authorized, textContent, parseCommand } from './worker.mjs';
-import { resolveModel, apiConfig } from './models.mjs';
+import { resolveModel, apiConfig, configuredApiModels, resolveConfiguredModel } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
 import { resolveTarget, helpText, notice, modelLabel, settingNotice, statusText } from './commands.mjs';
@@ -56,7 +56,7 @@ export async function createHub(config) {
     } else json(res, 200, { id, created, model: 'codex-local', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] });
   };
   const viewState = () => ({ ...selection, effortText: selection.model.includes('/') ? 'API默认' : effortShort(selection.effort) });
-  const help = (topic, detailed = false) => helpText(topic, viewState(), detailed);
+  const help = async (topic, detailed = false) => helpText(topic, { ...viewState(), apiModels: await configuredApiModels(config) }, detailed);
   let busy = false;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
@@ -92,7 +92,7 @@ export async function createHub(config) {
       const command = !route ? parseCommand(text) : null;
       if (hasImages && command) return answer(res, body, notice('指令错误', '设置指令请单独发送文字，不要附带图片。图片任务可使用 /srv 或 /pc。'));
       if (command?.type === 'target') {
-        if (!command.value) return answer(res, body, help('target'));
+        if (!command.value) return answer(res, body, await help('target'));
         const target = resolveTarget(command.value);
         if (!target) return answer(res, body, notice('指令错误', '执行端无效，原设置保持。', '可用：/t srv 或 /t pc'));
         await persist({ ...selection, target });
@@ -100,7 +100,7 @@ export async function createHub(config) {
       }
       if (command) {
         if (command.type === 'error') return answer(res, body, notice('指令错误', command.message));
-        if (command.type === 'help') return answer(res, body, help(command.value, true));
+        if (command.type === 'help') return answer(res, body, await help(command.value, true));
         if (command.type === 'clear') return answer(res, body, notice('使用提示', '请在微信入口发送 /cl 清空短期对话。当前入口没有可清空的对话记录。'));
         if (command.type === 'reasoning') {
           const options = await reasoningOptions(config, selection.model);
@@ -112,7 +112,7 @@ export async function createHub(config) {
           return answer(res, body, settingNotice('推理', effortShort(effort)));
         }
         if (command.type === 'model' && command.value) {
-          const model = resolveModel(command.value);
+          const model = await resolveConfiguredModel(config, command.value);
           if (!model) return answer(res, body, notice('指令错误', '模型名称无效，原设置保持。', '用法：/m 查看模型选项'));
           try { await apiConfig(config, model); }
           catch (error) { return answer(res, body, notice('配置未完成', error.message)); }
@@ -127,9 +127,10 @@ export async function createHub(config) {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
           return answer(res, body, statusText({ ...viewState(), serverOnline: Boolean(remote), computerOnline: Boolean(computer), authenticated: remote?.authenticated }));
         }
-        return answer(res, body, help(command.type));
+        return answer(res, body, await help(command.type));
       }
       const target = route?.target || selection.target;
+      if (target === 'computer' && selection.model.includes('/')) return json(res, 400, { error: { message: 'API 配置保存在服务器，当前仅支持服务器聊天。请发 /t srv，或 /m 2 返回账号执行。本次未调用 API。' } });
       if (route && !route.text && !hasImages) return answer(res, body, `请在 /${name(target)} 后写要执行的任务。`);
       const current = await health(target);
       if (!current) return json(res, 503, { error: { message: `${name(target)}执行端离线。本次任务没有执行，也不会改交其他机器。` } });

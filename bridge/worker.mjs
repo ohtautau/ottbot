@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { MODELS, resolveModel, apiConfig, runApi } from './models.mjs';
+import { MODELS, resolveModel, apiConfig, runApi, configuredApiModels, resolveConfiguredModel } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
 export { MODELS } from './models.mjs';
@@ -193,7 +193,7 @@ export async function createWorker(config, execute = runCodex) {
     selected = model; effort = nextEffort;
   };
   let busy = false;
-  const help = (topic, detailed = false) => helpText(topic, { model: selected }, detailed);
+  const help = async (topic, detailed = false) => helpText(topic, { model: selected, apiModels: await configuredApiModels(config) }, detailed);
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
     if (!authorized(req.headers.authorization, config.workerToken)) return json(res, 401, { error: { message: 'Unauthorized' } });
@@ -232,7 +232,7 @@ export async function createWorker(config, execute = runCodex) {
         if (command.type === 'error') {
           answer = notice('指令错误', command.message);
         } else if (command.type === 'help') {
-          answer = help(command.value, true);
+          answer = await help(command.value, true);
         } else if (command.type === 'reasoning') {
           const options = await reasoningOptions(config, selected);
           const chosen = resolveEffort(command.value);
@@ -241,7 +241,7 @@ export async function createWorker(config, execute = runCodex) {
             answer = settingNotice('推理', effortShort(effort));
           } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '用法：/r 查看可用档位') : await reasoningHelp(config, selected, effort);
         } else if (command.type === 'model' && command.value) {
-          const chosen = resolveModel(command.value);
+          const chosen = await resolveConfiguredModel(config, command.value);
           if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', '用法：/m 查看模型选项');
           else {
             await apiConfig(config, chosen);
@@ -254,7 +254,7 @@ export async function createWorker(config, execute = runCodex) {
           }
         } else answer = request.command.type === 'status'
           ? notice('执行端', compactRows([['连接', '✓ 在线'], ['模型', modelLabel(selected)], ['推理', selected.includes('/') ? 'API默认' : effortShort(effort)], ['权限', config.sandbox || 'read-only']]), commandItem('/h', '帮助；额度需实际调用验证。'))
-          : help(command.type);
+          : await help(command.type);
       } else answer = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
       if (res.destroyed) return;
       if (body.stream === true) {
