@@ -18,12 +18,15 @@
 - `/清空`：清空接收进程的短期对话上下文。
 - `/api add`：在绑定微信私聊中分步配置提供商、接口、API Key、模型；确认后保存。`/api list` 查看，`/api cancel` 取消。
 - `/api delete <模型编号>`：确认后删除单个 API 模型，取消用 `/api cancel`；不接受提供商标识，账号模型不可删除。剩余模型编号不变；删除最后一个模型后停用该提供商，保留接口和 Key。
+- `/img [路径]`（`/图片`、`/发图`、`/image`）：有路径时直接发送当前执行端工作区内的图片，不调用模型；无路径时回传10分钟内最近收到的照片。`/h img` 查看说明，`/pc /img photos/food.jpg` 可发送电脑工作区的图片。
 
 日常聊天直接发送文字即可。模型与默认执行端设置适用于此私人服务的所有会话。不同执行端、不同模型的历史分开保存，重启清空；本轮最多四张 PNG/JPEG/WebP 照片，每张不超过 10MB。照片识别不等于已保存到博客。
 
 Codex 通道每次调用前验证 ChatGPT 登录，忽略 API Key 环境变量，不回退到付费 API。API 需要先在服务器私有 `shared/providers.json` 中明确启用并配置 Key；未配置时拒绝切换。API 当前仅聊天和已启用的图片输入，未接博客或电脑工具。API Key 仅在 `/api add` 的专用步骤填写，不回显、不传入模型或对话历史；微信自身聊天记录仍可能保留。
 
 服务器 Codex 默认只读；电脑权限以本机私有配置的沙箱和工作区为准。博客写入需要单独接入经过认证的内容、上传等接口；图形界面控制尚未接入。失败时如实报告，不能把通道连通当作操作成功。
+
+图片回传：Codex 最终回复中的本地 Markdown 图片会转换为图片附件，经私有转接返回服务器，再使用微信 CDN 加密上传和图片消息发送。支持 PNG/JPEG/WebP，每条最多4张、单张10MB、总共20MB；不读取远程图片链接、工作区外文件或私有配置目录，API 文本不会触发本地文件读取。微信接收端只保留最近照片的内存缓存，10分钟后不再提供回传，`/cl` 和服务重启清除；不等于保存到博客。发送已有图片不调用 AI；图片生成、截图和保存能力取决于执行端实际工具及权限。
 
 ## 本机代理与 CodeBuddy
 
@@ -38,7 +41,7 @@ CodeBuddy 自定义模型填写本机 `local-state/codex-bridge/codebuddy-settin
 ## 验证
 
 ```sh
-node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs bridge/models.test.mjs bridge/api-setup.test.mjs
+node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs bridge/models.test.mjs bridge/api-setup.test.mjs bridge/images.test.mjs
 ```
 
 测试使用临时配置、模拟 Codex 和 API，不调用真实付费模型、不写入博客。实际登录、照片、博客授权写入和电脑操作需要分别验收。

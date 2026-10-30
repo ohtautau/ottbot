@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { imageReply, readReplyImage, validateReplyImages } from './images.mjs';
 import { MODELS, resolveModel, apiConfig, runApi, configuredApiModels, resolveConfiguredModel } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
@@ -78,8 +79,10 @@ export function buildPrompt(request) {
     '不要读取或输出密钥、Cookie、认证文件。不要修改模型配置、转接程序或其他会话。',
     '当前没有博客账户授权工具时，不要绕过登录直接改数据库；明确说明需要接入的接口。',
     '发布、删除、部署等外部写入须有本轮用户明确授权。执行失败必须如实报告。',
+    '需要向用户发送已有或本轮生成的图片时，在最终回复写 ![图片说明](<本地图片绝对路径>)，转接会上传为微信图片。',
+    '只发送用户要求的图片；图片须位于工作区（或本轮输入附件目录），支持PNG/JPEG/WebP，最多4张、单张10MB、总共20MB。不要把代码示例写成实际图片标记。没有图片文件时不要声称已发送或已生成。',
     '历史对话JSON：', JSON.stringify(request.history),
-    '本轮用户请求JSON：', JSON.stringify({ text: request.text, attachedImages: request.images.length }),
+    '本轮用户请求JSON：', JSON.stringify({ text: request.text, attachedImages: request.images.length, ...(request.imagePaths ? { imagePaths: request.imagePaths } : {}) }),
   ].join('\n');
 }
 
@@ -125,13 +128,15 @@ export async function runCodex(config, request, model, signal) {
   const folder = await mkdtemp(join(config.runtimeDirectory, 'request-'));
   try {
     const args = codexArguments(config, model);
+    const imagePaths = [];
     for (let i = 0; i < request.images.length; i++) {
       const path = join(folder, `image-${i}.${request.images[i].extension}`);
       await writeFile(path, request.images[i].data);
+      imagePaths.push(path);
       args.push('-i', path);
     }
     args.push('-');
-    return await new Promise((accept, reject) => {
+    const answer = await new Promise((accept, reject) => {
       const child = spawn(config.codexPath, args, { cwd: config.workspace, env, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdout.setEncoding('utf8');
       let pending = '', answer = '', failed = false, errorKind = '', eventBytes = 0;
@@ -160,7 +165,7 @@ export async function runCodex(config, request, model, signal) {
       });
       child.stderr.resume(); // Do not copy credentials or local path diagnostics into chat/logs.
       child.stdin.on('error', () => {});
-      child.stdin.end(buildPrompt(request));
+      child.stdin.end(buildPrompt({ ...request, imagePaths }));
       child.on('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('无法启动本机 Codex，请检查安装路径。')); });
       child.on('close', code => {
         clearTimeout(timer);
@@ -171,6 +176,7 @@ export async function runCodex(config, request, model, signal) {
         accept(answer);
       });
     });
+    return await imageReply(answer, { ...config, imageRoots: [folder] });
   } finally { await rm(folder, { recursive: true, force: true }); }
 }
 
@@ -226,7 +232,7 @@ export async function createWorker(config, execute = runCodex) {
         res.write(`data: ${JSON.stringify(chunk({ role: 'assistant' }))}\n\n`);
         heartbeat = setInterval(() => { if (!res.destroyed) res.write(': waiting for local Codex\n\n'); }, 5000);
       }
-      let answer;
+      let answer, images = [];
       if (request.command) {
         const command = request.command;
         if (command.type === 'error') {
@@ -240,6 +246,10 @@ export async function createWorker(config, execute = runCodex) {
             await persist(selected, chosen);
             answer = settingNotice('推理', effortShort(effort));
           } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '用法：/r 查看可用档位') : await reasoningHelp(config, selected, effort);
+        } else if (command.type === 'image' && command.value) {
+          const path = command.value.replace(/^(?:"([\s\S]*)"|'([\s\S]*)'|<([\s\S]*)>)$/, (_m, a, b, c) => a || b || c);
+          images = [await readReplyImage(path, config)];
+          answer = '';
         } else if (command.type === 'model' && command.value) {
           const chosen = await resolveConfiguredModel(config, command.value);
           if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', '用法：/m 查看模型选项');
@@ -255,12 +265,18 @@ export async function createWorker(config, execute = runCodex) {
         } else answer = request.command.type === 'status'
           ? notice('执行端', compactRows([['连接', '✓ 在线'], ['模型', modelLabel(selected)], ['推理', selected.includes('/') ? 'API默认' : effortShort(effort)], ['权限', config.sandbox || 'read-only']]), commandItem('/h', '帮助；额度需实际调用验证。'))
           : await help(command.type);
-      } else answer = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
+      } else {
+        const result = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
+        const reply = typeof result === 'string' ? (selected.includes('/') ? { text: result, images: [] } : await imageReply(result, config)) : result;
+        answer = reply.text;
+        images = reply.images || [];
+      }
+      validateReplyImages(images);
       if (res.destroyed) return;
       if (body.stream === true) {
-        res.write(`data: ${JSON.stringify(chunk({ content: answer }))}\n\n`);
+        res.write(`data: ${JSON.stringify(chunk({ content: answer, ...(images.length ? { ottbot_images: images } : {}) }))}\n\n`);
         res.end(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\ndata: [DONE]\n\n`);
-      } else json(res, 200, { id, object: 'chat.completion', created, model: 'codex-local', settings: { model: selected, reasoningEffort: effort }, choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }] });
+      } else json(res, 200, { id, object: 'chat.completion', created, model: 'codex-local', settings: { model: selected, reasoningEffort: effort }, ...(images.length ? { ottbot_images: images } : {}), choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }] });
     } catch (error) {
       if (res.destroyed) return;
       if (res.headersSent) res.end(`data: ${JSON.stringify({ error: { message: error.message, type: 'codex_bridge_error' } })}\n\ndata: [DONE]\n\n`);

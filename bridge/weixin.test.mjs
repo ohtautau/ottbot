@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCipheriv, randomBytes } from 'node:crypto';
-import { trustedWeixinUrl, decodeImage, formatWeixinText } from './weixin.mjs';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { trustedWeixinUrl, decodeImage, formatWeixinText, sendWeixinImages } from './weixin.mjs';
 
 test('Weixin menus use stable paragraph breaks without changing alignment or model replies', () => {
   const menu = '【默认执行端】\r\n\r\n/t srv   服务器  ← 当前\r\n/t pc    电脑';
@@ -32,4 +32,62 @@ test('plaintext and encrypted images with both documented key encodings', () => 
   assert.equal(decodeImage(encrypted, { media: { aes_key: Buffer.from(key.toString('hex')).toString('base64') } }), expected);
   assert.throws(() => decodeImage(Buffer.from('not an image'), {}));
   assert.throws(() => decodeImage(encrypted, { media: { aes_key: 'invalid' } }));
+});
+
+test('outbound images upload encrypted originals and send only to the bound conversation', async () => {
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ6kAAAAASUVORK5CYII=', 'base64');
+  const account = { owner: 'test-owner', token: 'test-not-real-bot-token', baseUrl: 'https://ilinkai.weixin.qq.com' };
+  const message = { from_user_id: account.owner, message_type: 1, context_token: 'test-context' };
+  const images = [{ data: bytes.toString('base64') }];
+  for (const full of [true, false]) {
+    let metadata, sent, uploaded = 0;
+    const request = async (base, path, body, token) => {
+      assert.equal(base, account.baseUrl); assert.equal(token, account.token);
+      if (path.endsWith('getuploadurl')) {
+        metadata = body;
+        assert.equal(body.rawsize, bytes.length);
+        assert.equal(body.rawfilemd5, createHash('md5').update(bytes).digest('hex'));
+        assert.equal(body.no_need_thumb, true);
+        return full ? { upload_full_url: 'https://novac2c.cdn.weixin.qq.com/c2c/upload?test=1' } : { upload_param: 'test-param+/=' };
+      }
+      assert.ok(path.endsWith('sendmessage')); sent = body.msg; return { ret: 0 };
+    };
+    const transport = async (url, init) => {
+      uploaded++;
+      if (!full) assert.equal(new URL(url).searchParams.get('encrypted_query_param'), 'test-param+/=');
+      assert.equal(init.redirect, 'error');
+      assert.equal(init.headers.Authorization, undefined);
+      assert.equal(init.body.length, metadata.filesize);
+      const decipher = createDecipheriv('aes-128-ecb', Buffer.from(metadata.aeskey, 'hex'), null);
+      assert.deepEqual(Buffer.concat([decipher.update(init.body), decipher.final()]), bytes);
+      return new Response('', { status: 200, headers: { 'x-encrypted-param': 'test-download' } });
+    };
+    assert.equal(await sendWeixinImages(account, message, images, { request, transport }), 1);
+    assert.equal(uploaded, 1);
+    assert.equal(sent.to_user_id, account.owner);
+    assert.equal(sent.context_token, message.context_token);
+    assert.equal(sent.item_list[0].type, 2);
+    assert.equal(sent.item_list[0].image_item.media.encrypt_query_param, 'test-download');
+    assert.equal(Buffer.from(sent.item_list[0].image_item.media.aes_key, 'base64').toString(), metadata.aeskey);
+  }
+  let calls = 0;
+  const forbidden = { request: async () => { calls++; }, transport: async () => { calls++; } };
+  await assert.rejects(sendWeixinImages(account, { ...message, from_user_id: 'someone-else' }, images, forbidden), /私聊/);
+  await assert.rejects(sendWeixinImages(account, { ...message, group_id: 'group' }, images, forbidden), /私聊/);
+  assert.equal(calls, 0);
+  const request = async () => ({ upload_full_url: 'https://example.com/steal' });
+  await assert.rejects(sendWeixinImages(account, message, images, { request, transport: forbidden.transport }), /图片发送未完成/);
+  assert.equal(calls, 0);
+  let uploads = 0;
+  await assert.rejects(sendWeixinImages(account, message, images, {
+    request: async () => ({ upload_param: 'test' }),
+    transport: async () => { uploads++; return new Response('', { status: 403 }); },
+  }), /0\/1/);
+  assert.equal(uploads, 1);
+  uploads = 0;
+  await assert.rejects(sendWeixinImages(account, message, images, {
+    request: async () => ({ upload_param: 'test' }),
+    transport: async () => { uploads++; return new Response('', { status: 200 }); },
+  }), /0\/1/);
+  assert.equal(uploads, 3);
 });

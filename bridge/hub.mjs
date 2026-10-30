@@ -90,6 +90,7 @@ export async function createHub(config) {
       const hasImages = Array.isArray(last.content) && last.content.some(part => part.type === 'image_url');
       const route = routingCommand(text);
       const command = !route ? parseCommand(text) : null;
+      const directImage = (command || (route && parseCommand(route.text)))?.type === 'image';
       if (hasImages && command) return answer(res, body, notice('指令错误', '设置指令请单独发送文字，不要附带图片。图片任务可使用 /srv 或 /pc。'));
       if (command?.type === 'target') {
         if (!command.value) return answer(res, body, await help('target'));
@@ -127,25 +128,27 @@ export async function createHub(config) {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
           return answer(res, body, statusText({ ...viewState(), serverOnline: Boolean(remote), computerOnline: Boolean(computer), authenticated: remote?.authenticated }));
         }
-        return answer(res, body, await help(command.type));
+        if (command.type !== 'image' || !command.value) return answer(res, body, await help(command.type));
       }
       const target = route?.target || selection.target;
-      if (target === 'computer' && selection.model.includes('/')) return json(res, 400, { error: { message: 'API 配置保存在服务器，当前仅支持服务器聊天。请发 /t srv，或 /m 2 返回账号执行。本次未调用 API。' } });
+      if (target === 'computer' && selection.model.includes('/') && !directImage) return json(res, 400, { error: { message: 'API 配置保存在服务器，当前仅支持服务器聊天。请发 /t srv，或 /m 2 返回账号执行。本次未调用 API。' } });
       if (route && !route.text && !hasImages) return answer(res, body, `请在 /${name(target)} 后写要执行的任务。`);
       const current = await health(target);
       if (!current) return json(res, 503, { error: { message: `${name(target)}执行端离线。本次任务没有执行，也不会改交其他机器。` } });
       if (current.reasoningControl !== true) return json(res, 503, { error: { message: '执行端版本需要更新并重启；本次没有执行，避免推理设置被当作普通任务。' } });
-      const control = await fetch(endpoint(target) + '/v1/chat/completions', { method: 'POST', headers,
-        body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: `/模型 ${selection.model}` }] }), signal: AbortSignal.timeout(5000) });
-      if (!control.ok) { await control.body.cancel(); throw new Error('执行端忙碌或模型设置失败。'); }
-      const modelControl = await control.json();
-      if (modelControl.settings?.model !== selection.model) throw new Error('Model synchronization failed');
-      if (!selection.model.includes('/')) {
-        const reasoning = await fetch(endpoint(target) + '/v1/chat/completions', { method: 'POST', headers,
-          body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: `/推理 ${selection.effort}` }] }), signal: AbortSignal.timeout(5000) });
-        const result = await reasoning.json();
-        if (!reasoning.ok || result.settings?.reasoningEffort !== selection.effort) {
-          return json(res, 400, { error: { message: '指定执行端不支持当前推理档位，请先发送 /推理 查看或选择 /推理 auto。本次没有调用模型。' } });
+      if (!directImage) {
+        const control = await fetch(endpoint(target) + '/v1/chat/completions', { method: 'POST', headers,
+          body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: `/模型 ${selection.model}` }] }), signal: AbortSignal.timeout(5000) });
+        if (!control.ok) { await control.body.cancel(); throw new Error('执行端忙碌或模型设置失败。'); }
+        const modelControl = await control.json();
+        if (modelControl.settings?.model !== selection.model) throw new Error('Model synchronization failed');
+        if (!selection.model.includes('/')) {
+          const reasoning = await fetch(endpoint(target) + '/v1/chat/completions', { method: 'POST', headers,
+            body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: `/推理 ${selection.effort}` }] }), signal: AbortSignal.timeout(5000) });
+          const result = await reasoning.json();
+          if (!reasoning.ok || result.settings?.reasoningEffort !== selection.effort) {
+            return json(res, 400, { error: { message: '指定执行端不支持当前推理档位，请先发送 /推理 查看或选择 /推理 auto。本次没有调用模型。' } });
+          }
         }
       }
       if (route) {
