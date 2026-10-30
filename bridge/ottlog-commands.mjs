@@ -9,7 +9,7 @@ import { createTodo, completeTodo, todoQuadrants, isTodoState, isMemoState, init
 const taskRank = task => { const rank = todoQuadrants.findIndex(q => q.important === task.important && q.urgent === task.urgent); return rank < 0 ? 3 : rank; };
 const clip = (text, n = 220) => String(text || '').replace(/\s+/g, ' ').slice(0, n);
 const dayKey = date => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-const commands = ['today', 'todo', 'done', 'note', 'noteimg'];
+const commands = ['today', 'todo', 'done', 'note', 'noteimg', 'noteend'];
 
 export async function createOttlogCommands({ configFile, stateFile, clientFactory = () => createOttlogClient(configFile), compressImages, now = () => new Date() }) {
   let state = { numbers: {}, nextNumber: 1, imageUntil: 0 };
@@ -39,23 +39,51 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
     const next = { ...data, notes: [item, ...data.notes] };
     if (!validNoteImages(images) || !noteStateFits(next)) throw new Error('便签图片或总容量过大，请压缩图片或整理旧便签。');
     await client.write('memos', raw, next);
-    return notice('便签已保存', images.length ? `图片：${images.length} 张` : `内容：${clip(text)}`);
+    return { item, text: notice('便签已保存', images.length ? `图片：${images.length} 张` : `内容：${clip(text)}`) };
+  }
+  async function prepareInput(text, { hasImages = false } = {}) {
+    let changed = false;
+    const command = parseCommand(text);
+    if (!hasImages && state.imageUntil && command?.type !== 'noteend') { state.imageUntil = 0; changed = true; }
+    if (state.noteSession && (state.noteSession.until <= now().getTime() || command && command.type !== 'noteend')) {
+      delete state.noteSession; changed = true;
+    }
+    if (changed) await persist();
   }
   return {
-    async cancelImageModeIfText(hasImages) { if (!hasImages && state.imageUntil) { state.imageUntil = 0; await persist(); } },
+    prepareInput,
     handles(text) { return commands.includes(parseCommand(text)?.type); },
     get imageMode() { return state.imageUntil > now().getTime(); },
+    get noteMode() { return state.noteSession?.until > now().getTime(); },
     async handle(text, { hasImages = false, readImages } = {}) {
       let command = parseCommand(text);
-      if (state.imageUntil && !hasImages) { state.imageUntil = 0; await persist(); }
-      if (!commands.includes(command?.type) && !this.imageMode) return { handled: false };
+      await prepareInput(text, { hasImages });
+      if (command?.type === 'noteend') {
+        const active = Boolean(state.noteSession || state.imageUntil);
+        delete state.noteSession; state.imageUntil = 0; await persist();
+        return { handled: true, text: notice('便签会话已结束', active ? '内容：已保存的文字和图片保留。' : '当前：没有正在编辑的便签。') };
+      }
+      if (!commands.includes(command?.type) && !this.imageMode && !this.noteMode) return { handled: false };
       try {
         const client = await clientFactory(); await bind(client);
-        if (!command && !this.imageMode) return { handled: true, text: notice('图片保存已退出', '账号已变化，请重新发送 /noteimg。') };
+        if (!command && !this.imageMode && !this.noteMode) return { handled: true, text: notice('便签会话已退出', '账号已变化，请重新开始。') };
+        if (this.noteMode) {
+          if (!text.trim() && !hasImages) throw new Error('便签会话支持文字和图片，请重新发送。');
+          const { raw, data } = await load(client, 'memos', initialMemoState, isMemoState);
+          const current = data.notes.find(n => n.id === state.noteSession.id);
+          if (!current) { delete state.noteSession; await persist(); throw new Error('正在编辑的便签已被删除，会话已结束。'); }
+          const images = hasImages ? await readImages() : [];
+          const compressed = compressImages ? await compressImages(images) : images;
+          const item = { ...current, body: [current.body, text.trim()].filter(Boolean).join('\n\n'), images: [...(current.images || []), ...compressed], updatedAt: now().toISOString() };
+          const next = { ...data, notes: data.notes.map(n => n.id === item.id ? item : n) };
+          if (!validNoteImages(item.images) || !noteStateFits(next)) throw new Error('便签最多6张图片且总容量有限；本条未保存，原内容保留。');
+          await client.write('memos', raw, next);
+          return { handled: true, text: notice('便签已追加', `便签：${clip(item.title, 80)}\n内容：${hasImages ? '图片已保存' : '文字已保存'}`, '结束：/end') };
+        }
         if (this.imageMode && hasImages) {
           const images = await readImages();
           const compressed = compressImages ? await compressImages(images) : images;
-          return { handled: true, text: await note(client, text, compressed) };
+          return { handled: true, text: (await note(client, text, compressed)).text };
         }
         if (command?.type === 'noteimg') {
           state.imageUntil = now().getTime() + 10 * 60 * 1000; await persist();
@@ -63,7 +91,13 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
         }
         if (hasImages) throw new Error('此指令请单独发送文字；保存图片先发 /noteimg。');
         if (command.type === 'note') {
-          if (command.value && command.value.toLowerCase() !== 'list') return { handled: true, text: await note(client, command.value) };
+          if (command.value && command.value.toLowerCase() !== 'list') {
+            if (command.value.split('\n')[0].length > 80) throw new Error('便签名最多80字。');
+            const saved = await note(client, command.value);
+            state.imageUntil = 0; state.noteSession = { id: saved.item.id, until: now().getTime() + 10 * 60 * 1000 };
+            await persist();
+            return { handled: true, text: notice('便签会话已开启', `便签：${saved.item.title}\n后续：直接发送文字或图片，将追加到这张便签。`, '保存：每条消息立即保存。\n结束：/end、其他指令或10分钟到期。') };
+          }
           const { data } = await load(client, 'memos', initialMemoState, isMemoState);
           const notes = [...data.notes].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
           return { handled: true, text: notice('最近便签', notes.length ? notes.map((n, i) => `${i + 1}. ${clip([n.title, n.body].filter(Boolean).join(' · '))}${n.images?.length ? '（图片' + n.images.length + '张）' : ''}`).join('\n\n') : '当前：暂无便签。') };
@@ -95,7 +129,8 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
         const unfinished = habits.items.filter(h => h.enabled && !(done ? done.has(h.id) : hasHabitDay(habits.completionHistory?.[h.id], ordinal)));
         const scheduled = [...unfinished].sort((a, b) => habitTimePeriods.indexOf(habitTimePeriod(a)) - habitTimePeriods.indexOf(habitTimePeriod(b)) || habitPriorities.indexOf(a.priority || 'none') - habitPriorities.indexOf(b.priority || 'none')).slice(0, 3);
         const reminders = longestUncheckedHabits(habits, now().getTime()).slice(0, 3);
-        const todayTasks = tasks.filter(t => !t.dueDate || t.dueDate <= day).slice(0, 3);
+        const candidates = tasks.filter(t => !t.dueDate || t.dueDate <= day);
+        const todayTasks = candidates.slice(0, Math.max(3, candidates.filter(t => taskRank(t) === 0).length));
         const habitLine = (h, i) => `${i + 1}. ${clip(h.title, 70)}（${habitTimePeriodLabels[habitTimePeriod(h)]} · ${{ high: '高', medium: '中', low: '低', none: '无' }[h.priority || 'none']}）`;
         return { handled: true, text: notice('今日 · ' + day, '【优先任务】\n\n' + (todayTasks.map(line).join('\n') || '暂无待办任务'),
           '【今日未完成习惯】\n\n' + (scheduled.map(habitLine).join('\n') || '今天的习惯已完成或暂无习惯'),

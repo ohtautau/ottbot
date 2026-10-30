@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createOttlogCommands } from './ottlog-commands.mjs';
 import { createOttlogClient } from './ottlog-client.mjs';
-import { parseCommand } from './commands.mjs';
+import { parseCommand, helpText } from './commands.mjs';
 import { isTodoState, isMemoState } from './ottlog-shared.mjs';
 
 const stamp = '2026-10-30T02:00:00.000Z';
@@ -24,6 +24,12 @@ test('blog parser preserves text and supports hi, node/note spellings', () => {
   assert.deepEqual(parseCommand('/todo 任务 名\n内容'), { type: 'todo', value: '任务 名\n内容' });
   for (const text of ['/nodeimg', '/node img', '/note img', '/noteimg']) assert.equal(parseCommand(text).type, 'noteimg');
   for (const text of ['/node', '/nodelist', '/node list', '/note', '/notelist']) assert.equal(parseCommand(text).type, 'note');
+  assert.equal(parseCommand('/end').type, 'noteend');
+  const help = helpText();
+  const blogs = help.split('【博客工具】')[1].split('【帮助查询】')[0];
+  const queries = help.split('【帮助查询】')[1].split('【其他操作】')[0];
+  assert.ok(blogs.includes('/note') && !blogs.includes('/h '));
+  assert.ok(queries.includes('/h note') && !queries.includes('/todo'));
 });
 
 test('task numbers survive reload, duplicate names refuse completion, and shared recurrence logic is reused', async () => fixture(async (handler, data, options) => {
@@ -74,6 +80,61 @@ test('notes preserve content, list ten, and image mode exits before processing n
   for (let i = 0; i < 11; i++) await handler.handle('/note 便签' + i);
   const list = (await handler.handle('/node list')).text;
   assert.equal((list.match(/\d+\./g) || []).length, 10);
+}));
+
+test('today shows all eligible high-priority tasks and fills fewer than three by priority', async () => fixture(async (handler, data) => {
+  data.todos.tasks = Array.from({ length: 4 }, (_, i) => task('high-' + i, '高任务' + i));
+  data.todos.tasks.push(task('mid', '中任务', true, false), task('low', '低任务', false, true));
+  let section = (await handler.handle('/today')).text.split('【优先任务】')[1].split('【今日未完成习惯】')[0];
+  for (let i = 0; i < 4; i++) assert.ok(section.includes('高任务' + i));
+  assert.ok(!section.includes('中任务') && !section.includes('低任务'));
+  data.todos.tasks = data.todos.tasks.filter(t => t.id !== 'high-2' && t.id !== 'high-3');
+  section = (await handler.handle('/today')).text.split('【优先任务】')[1].split('【今日未完成习惯】')[0];
+  assert.equal((section.match(/\d+\./g) || []).length, 3);
+  assert.ok(section.includes('中任务') && !section.includes('低任务'));
+}));
+
+test('note conversation appends to one note across restart and ends before another command', async () => fixture(async (handler, data, options) => {
+  const opened = await handler.handle('/note 我的便签');
+  assert.match(opened.text, /会话已开启/);
+  const id = data.memos.notes[0].id;
+  await handler.handle('第一段\n第二行');
+  const recovered = await createOttlogCommands(options);
+  assert.equal(recovered.noteMode, true);
+  await recovered.handle('图片说明', { hasImages: true, readImages: async () => [{ id: 'img-1', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }] });
+  assert.equal(data.memos.notes.length, 1);
+  assert.equal(data.memos.notes[0].id, id);
+  assert.equal(data.memos.notes[0].body, '第一段\n第二行\n\n图片说明');
+  assert.equal(data.memos.notes[0].images.length, 1);
+  await recovered.prepareInput('/api add');
+  assert.equal(recovered.noteMode, false);
+  assert.equal((await recovered.handle('ordinary text')).handled, false);
+  assert.equal(data.memos.notes[0].body.includes('ordinary'), false);
+  await recovered.handle('/note 第二张');
+  await recovered.handle('保存内容');
+  assert.match((await recovered.handle('/end')).text, /会话已结束/);
+  assert.equal(recovered.noteMode, false);
+  assert.equal((await recovered.handle('next ordinary')).handled, false);
+  assert.equal(data.memos.notes[0].body, '保存内容');
+}));
+
+test('note session expiration, deleted target and capacity errors do not corrupt saved notes', async () => fixture(async (handler, data, options) => {
+  let time = Date.parse(stamp);
+  const timed = await createOttlogCommands({ ...options, now: () => new Date(time) });
+  await timed.handle('/note 超时便签');
+  await timed.handle('到期前');
+  time += 10 * 60 * 1000;
+  assert.equal((await timed.handle('到期后')).handled, false);
+  assert.equal(data.memos.notes[0].body, '到期前');
+  await timed.handle('/note 图片上限');
+  const target = data.memos.notes[0];
+  target.images = Array.from({ length: 6 }, (_, i) => ({ id: 'image-' + i, dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }));
+  const snapshot = structuredClone(target);
+  assert.match((await timed.handle('', { hasImages: true, readImages: async () => [{ id: 'extra', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }] })).text, /本条未保存/);
+  assert.deepEqual(data.memos.notes[0], snapshot);
+  data.memos.notes = data.memos.notes.filter(n => n.id !== target.id);
+  assert.match((await timed.handle('已删除不应重建')).text, /已被删除/);
+  assert.equal(timed.noteMode, false);
 }));
 
 test('blog client refuses changed accounts and concurrent snapshot changes, never issuing unsafe PUT', async () => {

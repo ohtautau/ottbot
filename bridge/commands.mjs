@@ -16,6 +16,7 @@ export const COMMANDS = Object.freeze([
   { type: 'done', aliases: ['完成', 'done'] },
   { type: 'note', aliases: ['便签', 'note', 'notelist', 'node', 'nodelist'] },
   { type: 'noteimg', aliases: ['图片便签', 'noteimg', 'nodeimg'] },
+  { type: 'noteend', aliases: ['结束便签', 'end'] },
 ]);
 const lookup = new Map();
 for (const item of COMMANDS) for (const alias of item.aliases) {
@@ -37,9 +38,9 @@ export function parseCommand(text) {
   const type = lookup.get(match?.[1].toLowerCase());
   if (!type) return { type: 'error', message: '未知指令。发送 /帮助 或 /h 查看用法；发送以 // 开头的内容可作为普通聊天。' };
   let argument = (match[2] || '').trim();
-  if (['today', 'todo', 'done', 'note', 'noteimg'].includes(type)) {
+  if (['today', 'todo', 'done', 'note', 'noteimg', 'noteend'].includes(type)) {
     if (type === 'note' && /^img$/i.test(argument)) return { type: 'noteimg' };
-    if (['today', 'noteimg'].includes(type) && argument) return { type: 'error', message: '该指令不接受参数。' };
+    if (['today', 'noteimg', 'noteend'].includes(type) && argument) return { type: 'error', message: '该指令不接受参数。' };
     return { type, value: argument };
   }
   if (type === 'api') return { type, value: argument };
@@ -139,17 +140,20 @@ export function helpText(topic = '', state = {}, detailed = false) {
   ]), '说明：可写多行任务；不改变默认执行端。');
   if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '说明：连接正常不代表模型额度充足。');
   if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留：微信聊天记录和博客数据。');
-  if (['today', 'todo', 'done', 'note', 'noteimg'].includes(topic)) return notice('博客指令', '/today 或 hi：今日任务与习惯\n/todo <任务名>：增加高优先级任务\n/todo：四象限任务列表\n/done <编号或完整任务名>：完成任务\n/note <内容>：增加便签\n/note 或 /node：最近十条便签\n/noteimg 或 /nodeimg：保存后续图片为便签，发送非图片即退出');
+  if (['today', 'todo', 'done', 'note', 'noteimg', 'noteend'].includes(topic)) return notice('博客指令', '/today 或 hi：今日任务与习惯\n/todo <任务名>：增加高优先级任务\n/todo：四象限任务列表\n/done <编号或完整任务名>：完成任务\n/note <便签名>：创建便签并开始追加文字、图片\n/note 或 /node：最近十条便签\n/end：结束便签会话\n/noteimg 或 /nodeimg：后续图片各存一条便签', '便签会话：每条消息立即保存，10分钟到期或收到其他指令时结束；新指令照常执行。');
   if (topic === 'api') return notice('API 配置', commandRows([
     ['/api add', '新增或修改提供商'], ['/api list', '查看已配置提供商'], ['/api delete <模型编号>', '确认后删除模型'], ['/api cancel', '取消配置'],
   ]), '说明：仅在绑定账号的微信私聊中配置。按提示填写提供商、接口、Key、模型；不回显 Key，不自动调用或切换。');
   if (topic === 'aliases') return notice('指令别名', commandRows(COMMANDS.map(item => {
     return [item.aliases.filter(alias => /^[a-z?]+$/.test(alias)).map(alias => '/' + alias).join('  '), item.aliases.filter(alias => /[\u4e00-\u9fff]/.test(alias)).join('、')];
   })), '说明：每行写法等价；英文命令忽略大小写。');
-  return notice('帮助', commandRows([
+  return notice('帮助', '【博客工具】\n\n' + commandRows([
+    ['/today', '今日任务习惯'], ['/todo [任务名]', '查看或新增任务'], ['/done <编号或任务名>', '完成任务'], ['/note [便签名]', '查看或编辑便签'], ['/noteimg', '图片保存到便签'], ['/end', '结束便签会话'],
+  ]), '【帮助查询】\n\n' + commandRows([
+    ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'], ['/h note', '便签用法'], ['/h api', '接口用法'], ['/h a', '指令别名'],
+  ]), '【其他操作】\n\n' + commandRows([
     ['/st', '查看状态'], ['/m [模型]', '查看或切换模型'], ['/r [档位]', '查看或调整推理'], ['/t [执行端]', '查看或设置默认端'],
-    ['/today', '今日任务习惯'], ['/todo [任务名]', '查看或新增任务'], ['/done <编号或任务名>', '完成任务'], ['/note [内容]', '查看或新增便签'], ['/noteimg', '图片保存到便签'],
     ['/srv <任务>', '服务器任务'], ['/pc <任务>', '电脑任务'], ['/cl', '清空上下文'],
-    ['/api', '配置模型 API'], ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'], ['/h a', '指令别名'],
+    ['/api', '配置模型 API'],
   ]));
 }
