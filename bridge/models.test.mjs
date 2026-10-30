@@ -7,6 +7,11 @@ const request = { text: 'hello', history: [{ role: 'assistant', text: 'previous'
 
 test('Codex aliases, full model IDs and explicit API provider are distinct', () => {
   assert.equal(resolveModel('luna'), 'gpt-6-luna');
+  assert.equal(resolveModel('1'), 'gpt-6-luna');
+  assert.equal(resolveModel('2'), 'gpt-6.1-sol');
+  assert.equal(resolveModel('3'), 'gpt-6.1-terra');
+  assert.equal(resolveModel('4'), 'gpt-6-astra');
+  assert.equal(resolveModel('5'), null);
   assert.equal(resolveModel('codex/sol'), 'gpt-6.1-sol');
   assert.equal(resolveModel('gpt-future-model'), 'gpt-future-model');
   assert.equal(resolveModel('deepseek/deepseek-flash'), 'deepseek/deepseek-flash');

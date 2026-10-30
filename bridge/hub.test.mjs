@@ -49,7 +49,7 @@ test('server default, computer execution, persistent model selection and no offl
     const missingApi = await (await chat('/模型 deepseek/deepseek-flash')).json();
     assert.match(missingApi.choices[0].message.content, /尚未配置/);
     assert.equal((await (await fetch(base + '/health', { headers })).json()).model, MODELS.sol);
-    await (await chat('/模型 luna')).body.cancel();
+    await (await chat('/m 1')).body.cancel();
     await (await chat('/推理 3')).body.cancel();
     const invalidEffort = await (await chat('/推理 6')).json();
     assert.match(invalidEffort.choices[0].message.content, /不支持/);

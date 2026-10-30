@@ -3,10 +3,12 @@ import { readFile } from 'node:fs/promises';
 export const MODELS = Object.freeze({
   luna: 'gpt-6-luna', terra: 'gpt-6.1-terra', sol: 'gpt-6.1-sol', astra: 'gpt-6-astra',
 });
+const MODEL_CHOICES = Object.freeze({ '1': 'luna', '2': 'sol', '3': 'terra', '4': 'astra' });
 
 export function resolveModel(value) {
   if (typeof value !== 'string' || value.length > 150) return null;
   const name = value.replace(/^codex\//, '');
+  if (Object.hasOwn(MODEL_CHOICES, name)) return MODELS[MODEL_CHOICES[name]];
   if (Object.hasOwn(MODELS, name)) return MODELS[name];
   if (/^(?:gpt-|codex-|o[1-9])[a-z0-9._-]+$/.test(name)) return name;
   if (/^[a-z][a-z0-9_-]{0,31}\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value)) return value;

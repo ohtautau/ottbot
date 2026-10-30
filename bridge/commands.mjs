@@ -47,9 +47,9 @@ export function notice(title, ...sections) {
 
 export function helpText(topic = '', state = '') {
   const entries = {
-    model: ['模型 / model / m', '/m 查看模型\n/m sol 切换 Codex 模型\nluna · sol · terra · astra\n/m 提供商/模型ID 切换已配置 API', 'API 需先在服务器配置 Key；明确切换后计费，不自动回退。'],
+    model: ['模型选择', '参数：模型编号 或 英文名称\n\n1. Luna → /m 1\n   英文写法：/m luna\n\n2. Sol → /m 2\n   英文写法：/m sol\n\n3. Terra → /m 3\n   英文写法：/m terra\n\n4. Astra → /m 4\n   英文写法：/m astra', '示例：/模型 2 → 选择 Sol\n查看当前模型：/m\n中文、英文和缩写命令均可搭配编号。', '其他 Codex 模型：/m 完整模型ID\n已配置的 API：/m 提供商/模型ID\n例如：/m qwen/qwen-plus\nAPI 需先在服务器配置 Key；明确切换后计费，不自动回退。'],
     reasoning: ['推理 / reasoning / r', '/r 查看当前模型可用编号\n/r 2 设置为中等\n0 默认 · 1 低 · 2 中 · 3 高\n4 超高 · 5 最大 · 6 极致', '编号固定，只能选择当前模型支持的档位；API 推理参数暂未接入。'],
-    target: ['执行端 / target / t', '/t 查看默认执行端\n/t srv 默认服务器\n/t pc 默认电脑', '切换默认只影响后续任务；电脑离线不会转交服务器。'],
+    target: ['默认执行端', '参数：服务器 或 电脑\n\n/t 服务器 → 后续默认在服务器执行\n/t 电脑 → 后续默认在电脑执行\n\n英文参数也可用：srv / pc\n查看当前选择：/t', '切换默认只影响后续任务；电脑离线不会转交服务器。'],
     route: ['单次执行', '/srv 任务内容 → 服务器\n/pc 任务内容 → 电脑', '支持多行任务；仅影响本次，不改变默认执行端。'],
     status: ['状态 / status / st', '/st 查看连接、登录、当前模型和推理档位', '状态不调用模型，不能验证实际额度。'],
     clear: ['清空 / clear / cl', '/cl 清空微信短期对话上下文', '不删除微信聊天记录或博客数据。'],
