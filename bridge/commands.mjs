@@ -119,7 +119,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
   if (topic === 'target' && detailed) return usageHelp('执行端用法', '/t [服务器|电脑]', '查看或设置后续任务的默认执行位置。',
     [['省略', '查看当前默认端'], ['服务器 / srv', '交给服务器'], ['电脑 / pc', '交给在线电脑']],
     [['/t', '查看默认端'], ['/t 电脑', '默认使用电脑'], ['/srv <任务>', '仅本次使用服务器']],
-    '[参数] 可选，A|B 二选一，括号和 | 不用输入；<任务> 必填。电脑离线不转交其他机器。');
+    '[参数] 可选，A|B 二选一，括号和 | 不用输入；<任务> 必填。');
   if (topic === 'target') return notice('默认执行端', state.target ? `当前：${state.target === 'computer' ? '电脑' : '服务器'}` : '',
     compactRows([['服务器', '/t srv' + (state.target === 'server' ? '  ← 当前' : '')], ['电脑', '/t pc' + (state.target === 'computer' ? '  ← 当前' : '')]]),
     detailed ? '用法：/t [服务器|电脑]\n说明：省略参数查看，填写时二选一。\n别名：/执行 服务器、/t 电脑。\n单次指定：/srv <任务> 或 /pc <任务>' : '单次指定：/srv <任务> 或 /pc <任务>');
