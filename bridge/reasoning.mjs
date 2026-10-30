@@ -42,8 +42,8 @@ export async function reasoningHelp(config, model, effort) {
   if (model.includes('/')) return notice('推理', '说明：当前为 API 通道，暂不支持修改推理参数。', commandItem('/m 2', '切回 Codex'));
   const options = await reasoningOptions(config, model);
   const menu = compactRows(options.map(level => [
-    '/r ' + (Object.keys(NUMBERED).find(number => NUMBERED[number] === level) ?? level),
-    (LABELS[level] || level) + (level === effort ? '  ← 当前' : ''),
+    LABELS[level] || level,
+    '/r ' + (Object.keys(NUMBERED).find(number => NUMBERED[number] === level) ?? level) + (level === effort ? '  ← 当前' : ''),
   ]));
   return notice('推理', `当前：${effortShort(effort)}`, menu, '说明：仅列出本模型支持的档位。\n提示：档位越高通常越慢、越耗额度。\n用法：/h r');
 }
