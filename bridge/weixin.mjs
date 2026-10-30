@@ -130,8 +130,11 @@ export function formatWeixinText(text, menu = false) {
 export function receiptText(input, items = [], defaultTarget = 'server') {
   const text = input || items.filter(item => item.type === 3).map(item => item.voice_item?.text || '').join('\n');
   const command = parseCommand(text);
-  const target = ['today', 'todo', 'done', 'note', 'noteimg'].includes(command?.type) ? 'server' : command?.type === 'route' ? command.target : defaultTarget;
-  return !command || ['route', 'today', 'todo', 'done', 'note', 'noteimg'].includes(command.type) ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…` : '';
+  if (items.some(item => ![1, 2, 3].includes(item.type))) return '';
+  if (command && (command.type !== 'route' || parseCommand(command.text))) return '';
+  if (command?.type === 'route' && !command.text && !items.some(item => item.type === 2)) return '';
+  const target = command?.type === 'route' ? command.target : defaultTarget;
+  return `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…`;
 }
 
 export function splitBlogText(text) {
@@ -240,7 +243,7 @@ export async function monitor(configPath) {
           let defaultTarget;
           try { defaultTarget = JSON.parse(await readFile(join(directory, 'hub-runtime/hub-selection.json'), 'utf8')).target; }
           catch (error) { if (error.code !== 'ENOENT') throw error; defaultTarget = 'server'; }
-          const receipt = receiptText(input, items, ottlog.imageMode && hasImages ? 'server' : defaultTarget);
+          const receipt = ottlog.imageMode && hasImages ? '' : receiptText(input, items, defaultTarget);
           if (receipt) await send(message, receipt).catch(() => console.error('微信接收确认发送失败，继续处理。'));
           const blog = await ottlog.handle(input, { hasImages, readImages: async () => (await receiveContent(message)).filter(part => part.type === 'image_url').map(part => ({ dataUrl: part.image_url.url })) });
           if (blog.handled) { for (const page of splitBlogText(blog.text)) await send(message, page, true); continue; }

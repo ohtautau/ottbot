@@ -7,10 +7,12 @@ test('receipt acknowledges tasks before media download without repeating control
   for (const text of ['你好', '//普通聊天']) assert.equal(receiptText(text), '【服务器】\n\n收到，正在处理…');
   assert.equal(receiptText('/pc 做任务'), '【电脑】\n\n收到，正在处理…');
   assert.equal(receiptText('你好', [], 'computer'), '【电脑】\n\n收到，正在处理…');
-  assert.equal(receiptText('HI', [], 'computer'), '【服务器】\n\n收到，正在处理…');
+  assert.equal(receiptText('HI', [], 'computer'), '');
   assert.equal(receiptText('/srv 做任务', [], 'computer'), '【服务器】\n\n收到，正在处理…');
   assert.equal(receiptText('', [{ type: 2 }]), '【服务器】\n\n收到，正在处理…');
-  for (const text of ['/h', '/m 2', '/st', '/api add', '/api cancel', '/cl', '/unknown', '/img']) assert.equal(receiptText(text), '');
+  for (const text of ['/h', '/m 2', '/st', '/api add', '/api cancel', '/cl', '/unknown', '/img', '/today', '/todo 新任务', '/done 1', '/note 正文', '/node img', '/pc /st', '/pc /h', '/srv']) assert.equal(receiptText(text), '');
+  assert.equal(receiptText('/pc', [{ type: 2 }]), '【电脑】\n\n收到，正在处理…');
+  assert.equal(receiptText('', [{ type: 4 }]), '');
   assert.equal(receiptText('', [{ type: 3, voice_item: { text: '/h' } }]), '');
 });
 
