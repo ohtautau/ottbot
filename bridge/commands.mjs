@@ -100,12 +100,12 @@ export function helpText(topic = '', state = {}, detailed = false) {
     ['/srv <任务>', '必须填写任务'], ['/h [主题]', '省略主题查看总帮助'], ['/t [服务器|电脑]', '填写时二选一，省略则查看'],
   ]), '说明：括号不用输入；| 两侧只选一个。\n示例：/srv 查看目录、/h、/h m、/t 电脑');
   if (topic === 'model') {
-    const menu = compactRows(choices.map((id, index) => [`模型${['一', '二', '三', '四'][index]}`, `/m ${index + 1}  ${modelLabel(id)}${id === model ? '  ← 当前' : ''}`]));
+    const menu = compactRows(choices.map((id, index) => [`/m ${index + 1}`, modelLabel(id) + (id === model ? '  ← 当前' : '')]));
     return detailed ? notice('模型用法', current, menu,
       '用法：/m [模型]\n说明：省略参数查看，填写参数切换。\n同一选择可用：/m 2、/m sol、/模型 2',
       '其他 Codex 模型：/m <模型ID>\n已配置的 API：/m <提供商>/<模型ID>\n示例：/m qwen/qwen-plus',
       '说明：API 需先配置 Key，按提供商计费；不自动回退。')
-      : notice('模型', current, menu, '示例：/m 2 选择 Sol\n英文参数与 API：/h m');
+      : notice('模型', current, menu);
   }
   if (topic === 'reasoning') return notice('推理用法', commandRows([
     ['/r', '查看本模型可用档位'], ['/r 2', '中等推理'], ['/r auto', '模型默认'],

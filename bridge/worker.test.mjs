@@ -33,8 +33,9 @@ test('shared command contract: aliases, boundaries, task preservation and help',
   assert.match(helpText('syntax'), /二选一[\u3000 ]+选项A\|选项B/);
   assert.match(helpText(), /中文 \/ 英文 \/ 缩写/);
   const menu = helpText('model', { model: MODELS.sol });
-  assert.match(menu, /模型二\u3000+\/m 2 +Sol +← 当前/);
-  assert.match(menu, /模型三\u3000+\/m 3 +Terra/);
+  assert.match(menu, /\/m 2\u3000+Sol +← 当前/);
+  assert.match(menu, /\/m 3\u3000+Terra/);
+  assert.doesNotMatch(menu, /模型[一二三四]|示例：|英文参数与 API/);
   assert.ok(menu.split('\n').length <= 14);
   assert.doesNotMatch(menu, /────────|│|项目 +内容|指令 +说明/);
 });
