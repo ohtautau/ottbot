@@ -49,12 +49,12 @@ export function textTable(headers, rows) {
   const clean = value => String(value).replace(/[\r\n│]/g, ' ').trim();
   const data = [headers, ...rows].map(row => row.map(clean));
   const width = Math.max(...data.map(row => displayWidth(row[0])));
-  const line = row => row[0] + ' '.repeat(width - displayWidth(row[0])) + ' │ ' + row[1];
-  return [line(data[0]), '─'.repeat(width + 1) + '┼────────', ...data.slice(1).map(line)].join('\n');
+  const line = row => row[0] + ' '.repeat(width - displayWidth(row[0]) + 4) + row[1];
+  return [line(data[0]), '', ...data.slice(1).map(line)].join('\n');
 }
 
 function tableSection(section) {
-  if (section.includes('│')) return section;
+  if (/^(?:指令 {2,}说明|项目 {2,}内容|参数 {2,}说明)\n/.test(section)) return section;
   const lines = section.split('\n');
   const parts = [];
   let rows = [], kind = '';
