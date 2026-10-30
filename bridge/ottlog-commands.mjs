@@ -24,7 +24,7 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
     await persist();
   }
   const line = task => `${state.numbers[task.id]}. ${clip(task.title, 70)}${task.dueDate ? '（' + task.dueDate + (task.dueTime ? ' ' + task.dueTime : '') + '）' : ''}`;
-  const taskCard = task => `${state.numbers[task.id]}. ${clip(task.title, 80)}${task.dueDate ? '\n时间：' + task.dueDate + (task.dueTime ? ' ' + task.dueTime : '') : ''}`;
+  const taskCard = task => `${state.numbers[task.id]}. ${clip(task.title, 80)}${task.dueDate ? '（' + task.dueDate + (task.dueTime ? ' ' + task.dueTime : '') + '）' : ''}`;
   async function load(client, key, empty, validate) {
     const raw = await client.read(key);
     const data = raw === null ? structuredClone(empty) : raw;
@@ -97,9 +97,9 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
         const reminders = longestUncheckedHabits(habits, now().getTime()).slice(0, 3);
         const todayTasks = tasks.filter(t => !t.dueDate || t.dueDate <= day).slice(0, 3);
         const habitLine = (h, i) => `${i + 1}. ${clip(h.title, 70)}（${habitTimePeriodLabels[habitTimePeriod(h)]} · ${{ high: '高', medium: '中', low: '低', none: '无' }[h.priority || 'none']}）`;
-        return { handled: true, text: notice('今日 · ' + day, '优先任务\n' + (todayTasks.map(line).join('\n') || '暂无待办任务'),
-          '今日未完成习惯\n' + (scheduled.map(habitLine).join('\n') || '今天的习惯已完成或暂无习惯'),
-          '习惯提醒\n' + (reminders.map(habitLine).join('\n') || '暂无提醒')) };
+        return { handled: true, text: notice('今日 · ' + day, '【优先任务】\n\n' + (todayTasks.map(line).join('\n') || '暂无待办任务'),
+          '【今日未完成习惯】\n\n' + (scheduled.map(habitLine).join('\n') || '今天的习惯已完成或暂无习惯'),
+          '【习惯提醒】\n\n' + (reminders.map(habitLine).join('\n') || '暂无提醒')) };
       } catch (error) { return { handled: true, text: notice('未完成', error.message) }; }
     },
   };
