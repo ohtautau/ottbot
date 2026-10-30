@@ -11,7 +11,6 @@ export const COMMANDS = Object.freeze([
   { type: 'computer', aliases: ['电脑', '本机', 'computer', 'pc', 'c'] },
   { type: 'clear', aliases: ['清空', '清除', 'clear', 'cl'] },
   { type: 'api', aliases: ['接口', 'api', 'ap'] },
-  { type: 'image', aliases: ['图片', '发图', 'image', 'img'] },
 ]);
 const lookup = new Map();
 for (const item of COMMANDS) for (const alias of item.aliases) {
@@ -32,7 +31,7 @@ export function parseCommand(text) {
   const type = lookup.get(match?.[1].toLowerCase());
   if (!type) return { type: 'error', message: '未知指令。发送 /帮助 或 /h 查看用法；发送以 // 开头的内容可作为普通聊天。' };
   let argument = (match[2] || '').trim();
-  if (['api', 'image'].includes(type)) return { type, value: argument };
+  if (type === 'api') return { type, value: argument };
   if (['server', 'computer'].includes(type)) return { type: 'route', target: type, text: argument };
   if (['status', 'clear'].includes(type)) {
     return argument ? { type: 'error', message: `/${match[1]} 不接受参数。发送 /h 查看用法。` } : { type };
@@ -129,7 +128,6 @@ export function helpText(topic = '', state = {}, detailed = false) {
   ]), '说明：可写多行任务；不改变默认执行端。');
   if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '说明：连接正常不代表模型额度充足。');
   if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留：微信聊天记录和博客数据。');
-  if (topic === 'image') return notice('发送图片', '用法：/img [图片路径]\n示例：/img photos/food.jpg\n最新生成：/img last', '范围：当前执行端工作区或Codex专用生图目录内的 PNG、JPEG、WebP；单张最多10MB。\n回传照片：发送照片后，10分钟内发 /img 即可发回原图。');
   if (topic === 'api') return notice('API 配置', commandRows([
     ['/api add', '新增或修改提供商'], ['/api list', '查看已配置提供商'], ['/api delete <模型编号>', '确认后删除模型'], ['/api cancel', '取消配置'],
   ]), '说明：仅在绑定账号的微信私聊中配置。按提示填写提供商、接口、Key、模型；不回显 Key，不自动调用或切换。');
@@ -139,6 +137,6 @@ export function helpText(topic = '', state = {}, detailed = false) {
   return notice('帮助', commandRows([
     ['/st', '查看状态'], ['/m [模型]', '查看或切换模型'], ['/r [档位]', '查看或调整推理'], ['/t [执行端]', '查看或设置默认端'],
     ['/srv <任务>', '服务器任务'], ['/pc <任务>', '电脑任务'], ['/cl', '清空上下文'],
-    ['/api', '配置模型 API'], ['/img <路径>', '发送图片'], ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'], ['/h a', '指令别名'],
+    ['/api', '配置模型 API'], ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'], ['/h a', '指令别名'],
   ]));
 }

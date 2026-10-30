@@ -129,7 +129,7 @@ export function receiptText(input, items = [], defaultTarget = 'server') {
   const text = input || items.filter(item => item.type === 3).map(item => item.voice_item?.text || '').join('\n');
   const command = parseCommand(text);
   const target = command?.type === 'route' ? command.target : defaultTarget;
-  return !command || ['route', 'image'].includes(command.type) ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…` : '';
+  return !command || command.type === 'route' ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…` : '';
 }
 
 // Original-image upload and message format follow Tencent/openclaw-weixin's
@@ -193,7 +193,6 @@ export async function monitor(configPath) {
   if (!account.token || !account.owner) throw new Error('微信尚未绑定。');
   const cursorFile = join(directory, 'weixin-cursor.json');
   const histories = new Map(); // Separate target and model/provider; restart clears chat history.
-  let recentImages = [], recentImagesAt = 0; // Latest incoming photos, memory only, ten minutes.
   let state = { cursor: '', seen: [] };
   try { state = JSON.parse(await readFile(cursorFile, 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -227,23 +226,12 @@ export async function monitor(configPath) {
           if (receipt) await send(message, receipt).catch(() => console.error('微信接收确认发送失败，继续处理。'));
           const content = await receiveContent(message);
           const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
-          if (content.some(part => part.type === 'image_url')) {
-            const photos = content.filter(part => part.type === 'image_url').map(part => ({ data: part.image_url.url.split(',')[1] }));
-            validateReplyImages(photos);
-            recentImages = photos; recentImagesAt = Date.now();
-          }
           if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {
             histories.clear();
-            recentImages = []; recentImagesAt = 0;
             await send(message, '【清空成功】\n\n已清空短期对话上下文。\n微信聊天记录和博客数据保留。', true);
             continue;
           }
           const parsed = parseCommand(plainText);
-          if (Date.now() - recentImagesAt > 10 * 60 * 1000) recentImages = [];
-          if (parsed?.type === 'image' && !parsed.value && recentImages.length) {
-            await sendWeixinImages(account, message, recentImages);
-            continue; // Echoing an attachment needs neither model inference nor history.
-          }
           const command = parsed && parsed.type !== 'route';
           let history = [];
           if (!command) {

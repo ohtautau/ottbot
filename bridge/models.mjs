@@ -81,7 +81,6 @@ export async function apiConfig(config, model) {
 export async function runApi(config, request, model, signal, transport = fetch) {
   const settings = await apiConfig(config, model);
   if (!settings) throw new Error('未指定 API 提供商。');
-  if (request.images.length && settings.images !== true) throw new Error('该 API 未启用图片输入；本次没有发送照片。');
   const content = request.images.length ? [
     { type: 'text', text: request.text },
     ...request.images.map(image => ({ type: 'image_url', image_url: { url: `data:image/${image.extension === 'jpg' ? 'jpeg' : image.extension};base64,${image.data.toString('base64')}` } })),

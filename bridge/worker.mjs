@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { imageReply, readReplyImage, validateReplyImages, generatedImages } from './images.mjs';
+import { imageReply, validateReplyImages, generatedImages } from './images.mjs';
 import { MODELS, resolveModel, apiConfig, runApi, configuredApiModels, resolveConfiguredModel } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
@@ -249,15 +249,6 @@ export async function createWorker(config, execute = runCodex) {
             await persist(selected, chosen);
             answer = settingNotice('推理', effortShort(effort));
           } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '用法：/r 查看可用档位') : await reasoningHelp(config, selected, effort);
-        } else if (command.type === 'image' && command.value) {
-          let path = command.value.replace(/^(?:"([\s\S]*)"|'([\s\S]*)'|<([\s\S]*)>)$/, (_m, a, b, c) => a || b || c);
-          if (['last', 'latest', '最新', '最近'].includes(path.toLowerCase())) {
-            const latest = (await generatedImages(config))[0];
-            if (!latest) throw new Error('当前执行端没有可回传的生成图片。');
-            path = latest.path;
-          }
-          images = [await readReplyImage(path, config)];
-          answer = '';
         } else if (command.type === 'model' && command.value) {
           const chosen = await resolveConfiguredModel(config, command.value);
           if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', '用法：/m 查看模型选项');

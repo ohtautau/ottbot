@@ -64,28 +64,19 @@ test('hub carries images from both executors; direct sends skip inference and AP
     hub.listen(0, '127.0.0.1'); await once(hub, 'listening'); servers.unshift(hub);
     const base = `http://127.0.0.1:${hub.address().port}`;
     const chat = (text, stream = false) => fetch(base + '/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: 'codex-local', messages: [{ role: 'user', content: text }], stream }) });
-    for (const command of ['/img photo.png', '/pc /图片 photo.png', '/服务器 请发回照片', '/电脑 请发回照片']) {
+    for (const command of ['/服务器 请发回照片', '/电脑 请发回照片']) {
       const response = await chat(command);
       assert.equal(response.status, 200);
       const result = await response.json();
       assert.equal(result.ottbot_images[0].data, png.toString('base64'));
-      assert.ok(!result.choices[0].message.content.includes('!['));
     }
     assert.equal(calls, 2);
-    const lastImage = await (await chat('/img last')).json();
-    assert.equal(lastImage.ottbot_images[0].name, 'latest.png');
-    assert.equal(lastImage.ottbot_images[0].data, png.toString('base64'));
-    assert.equal(calls, 2);
-    const sse = await (await chat('/img photo.png', true)).text();
+    const sse = await (await chat('请发照片', true)).text();
     assert.ok(sse.includes('ottbot_images') && sse.includes('[DONE]'));
-    const rejected = await chat('/img ../outside.png');
-    assert.equal(rejected.status, 502);
-    assert.match((await rejected.json()).error.message, /图片无法发送/);
-    assert.equal(calls, 2);
+    const removed = await (await chat('/img last')).json();
+    assert.match(removed.choices[0].message.content, /未知指令/);
+    assert.equal(calls, 3);
     await (await chat('/m custom/example')).body.cancel();
-    const directUnderApi = await (await chat('/pc /img photo.png')).json();
-    assert.equal(directUnderApi.ottbot_images[0].data, png.toString('base64'));
-    assert.equal(calls, 2);
     const apiReply = await (await chat('hello')).json();
     assert.equal(apiReply.ottbot_images, undefined);
     assert.ok(apiReply.choices[0].message.content.includes('![照片]'));

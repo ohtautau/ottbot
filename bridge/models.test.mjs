@@ -19,15 +19,24 @@ test('Codex aliases, full model IDs and explicit API provider are distinct', () 
   for (const value of ['invalid', '--config=x', 'https://example.com', 'deepseek/model --flag', 'constructor']) assert.equal(resolveModel(value), null);
 });
 
-test('API missing key, unsafe endpoint or unsupported images fail before network access', async () => {
+test('API missing key and unsafe endpoint fail before network access', async () => {
   await assert.rejects(apiConfig({}, 'deepseek/model'), /尚未配置/);
   assert.equal((await apiConfig(config, 'deepseek/vendor/model:version')).id, 'vendor/model:version');
   await assert.rejects(apiConfig({ providers: { deepseek: { ...config.providers.deepseek, endpoint: 'http://api.deepseek.com/chat/completions' } } }, 'deepseek/model'), /HTTPS/);
   let calls = 0;
   const transport = async () => { calls++; throw new Error('must not run'); };
   await assert.rejects(runApi({}, request, 'deepseek/model', undefined, transport), /尚未配置/);
-  await assert.rejects(runApi(config, { ...request, images: [{ data: Buffer.from('x'), extension: 'png' }] }, 'deepseek/model', undefined, transport), /图片/);
   assert.equal(calls, 0);
+});
+
+test('images are sent directly to the selected API with the user message', async () => {
+  const reply = await runApi(config, { ...request, images: [{ data: Buffer.from('test-image'), extension: 'png' }] }, 'deepseek/model', undefined, async (_url, init) => {
+    const content = JSON.parse(init.body).messages.at(-1).content;
+    assert.equal(content[0].text, 'hello');
+    assert.equal(content[1].image_url.url, 'data:image/png;base64,' + Buffer.from('test-image').toString('base64'));
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'mock image reply' } }] }));
+  });
+  assert.equal(reply, 'mock image reply');
 });
 
 test('only explicitly selected API receives bounded chat; error never retries another provider', async () => {
