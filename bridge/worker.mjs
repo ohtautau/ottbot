@@ -80,6 +80,7 @@ export function buildPrompt(request) {
     '当前没有博客账户授权工具时，不要绕过登录直接改数据库；明确说明需要接入的接口。',
     '发布、删除、部署等外部写入须有本轮用户明确授权。执行失败必须如实报告。',
     '需要向用户发送已有或本轮生成的图片时，在最终回复写 ![图片说明](<本地图片绝对路径>)，转接会上传为微信图片。',
+    '内置生图工具的图片可直接从Codex专用generated_images目录回传，不需要复制到工作区；工作区只读不代表不能回传已生成的图片。必须以工具实际产出的文件为准，不可凭空声称生成成功。',
     '只发送用户要求的图片；图片须位于工作区（或本轮输入附件目录），支持PNG/JPEG/WebP，最多4张、单张10MB、总共20MB。不要把代码示例写成实际图片标记。没有图片文件时不要声称已发送或已生成。',
     '历史对话JSON：', JSON.stringify(request.history),
     '本轮用户请求JSON：', JSON.stringify({ text: request.text, attachedImages: request.images.length, ...(request.imagePaths ? { imagePaths: request.imagePaths } : {}) }),
@@ -176,7 +177,7 @@ export async function runCodex(config, request, model, signal) {
         accept(answer);
       });
     });
-    return await imageReply(answer, { ...config, imageRoots: [folder] });
+    return await imageReply(answer, { ...config, imageRoots: [...(config.imageRoots || []), folder] });
   } finally { await rm(folder, { recursive: true, force: true }); }
 }
 
@@ -291,6 +292,7 @@ export async function createWorker(config, execute = runCodex) {
 async function main() {
   const configPath = resolve(process.argv[2] || 'local-state/codex-bridge/worker.json');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.imageRoots = [join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'generated_images')];
   config.modelCacheFile ||= join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'models_cache.json');
   if (typeof config.workerToken !== 'string' || config.workerToken.length < 32) throw new Error('缺少本机转接密钥。');
   config.runtimeDirectory = resolve(dirname(configPath), 'runtime');

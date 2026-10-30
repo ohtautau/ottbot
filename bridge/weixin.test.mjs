@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { trustedWeixinUrl, decodeImage, formatWeixinText, sendWeixinImages } from './weixin.mjs';
+import { trustedWeixinUrl, decodeImage, formatWeixinText, sendWeixinImages, receiptText } from './weixin.mjs';
+
+test('receipt acknowledges tasks before media download without repeating controls or sensitive inputs', () => {
+  for (const text of ['你好', '/pc 做任务', '/img photo.png', '/img', '//普通聊天']) assert.equal(receiptText(text), '收到，正在处理…');
+  assert.equal(receiptText('', [{ type: 2 }]), '收到，正在处理…');
+  for (const text of ['/h', '/m 2', '/st', '/api add', '/api cancel', '/cl', '/unknown']) assert.equal(receiptText(text), '');
+  assert.equal(receiptText('', [{ type: 3, voice_item: { text: '/h' } }]), '');
+});
 
 test('Weixin menus use stable paragraph breaks without changing alignment or model replies', () => {
   const menu = '【默认执行端】\r\n\r\n/t srv   服务器  ← 当前\r\n/t pc    电脑';

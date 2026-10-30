@@ -26,6 +26,8 @@ test('outgoing image files are bounded, local, and inside the workspace after sy
     const example = '语法：`![示例](missing.png)`\n```markdown\n![示例](missing.png)\n```\n~~~\n![示例](missing.png)\n~~~';
     assert.deepEqual(await imageReply(example, config), { text: example, images: [] });
     await writeFile(join(root, 'outside.png'), png);
+    assert.equal((await readReplyImage(join(root, 'outside.png'), { workspace, imageRoots: [join(root, 'missing'), root] })).data, png.toString('base64'));
+    assert.equal((await readReplyImage('food photo.png', { workspace, imageRoots: [join(root, 'missing')] })).data, png.toString('base64'));
     await mkdir(join(workspace, 'local-state'));
     await writeFile(join(workspace, 'local-state', 'private.png'), png);
     await writeFile(join(workspace, 'fake.png'), 'not an image');

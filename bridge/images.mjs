@@ -32,11 +32,12 @@ export async function readReplyImage(path, config) {
     const candidate = await realpath(resolve(workspace || roots[0], path));
     let allowed = false;
     for (const root of roots) {
-      const canonical = await realpath(root);
+      let canonical;
+      try { canonical = await realpath(root); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
       const subpath = relative(canonical, candidate);
       // Never export credentials or the bridge's private state as disguised images.
       if (subpath && !isAbsolute(subpath) && subpath !== '..' && !subpath.startsWith('..' + (process.platform === 'win32' ? '\\' : '/'))
-          && !subpath.split(/[\\/]/).some(part => /^(?:\.|local-state$|shared$|node_modules$)/i.test(part))) allowed = true;
+          && !subpath.split(/[\\/]/).some(part => /^(?:\.|local-state$|shared$|node_modules$)/i.test(part))) { allowed = true; break; }
     }
     if (!allowed) throw new Error();
     const file = await open(candidate, 'r');
