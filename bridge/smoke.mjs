@@ -33,7 +33,7 @@ console.log('Invalid relay key: rejected');
 const models = await (await fetch(base + '/v1/models', { headers })).json();
 assert.equal(models.data[0].id, 'codex-local');
 const control = await chat('/状态', true);
-assert.ok(control.includes('data: [DONE]') && control.includes(status.execution === 'hybrid-codex' ? '服务器接收端在线' : '转接已连接'));
+assert.ok(control.includes('data: [DONE]') && control.includes(status.execution === 'hybrid-codex' ? '【状态】' : '【执行端】'));
 console.log('SSE control command: passed (no inference)');
 
 if (process.argv.includes('--inference')) {

@@ -8,9 +8,9 @@ import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { MODELS, authorized, textContent, parseCommand } from './worker.mjs';
 import { resolveModel, apiConfig } from './models.mjs';
-import { resolveEffort, reasoningOptions, reasoningHelp, effortLabel } from './reasoning.mjs';
+import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
-import { resolveTarget, helpText, notice } from './commands.mjs';
+import { resolveTarget, helpText, notice, modelLabel, settingNotice, statusText } from './commands.mjs';
 
 export function routingCommand(text) {
   const command = parseCommand(text);
@@ -55,8 +55,8 @@ export async function createHub(config) {
       res.end(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\ndata: [DONE]\n\n`);
     } else json(res, 200, { id, created, model: 'codex-local', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] });
   };
-  const currentSettings = () => `默认执行端：${name(selection.target)}\n当前模型：${selection.model}\n推理强度：${selection.model.includes('/') ? 'API默认' : effortLabel(selection.effort)}`;
-  const help = topic => helpText(topic, currentSettings());
+  const viewState = () => ({ ...selection, effortText: selection.model.includes('/') ? 'API默认' : effortShort(selection.effort) });
+  const help = (topic, detailed = false) => helpText(topic, viewState(), detailed);
   let busy = false;
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
@@ -94,36 +94,38 @@ export async function createHub(config) {
       if (command?.type === 'target') {
         if (!command.value) return answer(res, body, help('target'));
         const target = resolveTarget(command.value);
-        if (!target) return answer(res, body, notice('指令错误', '执行端无效，可选：服务器 / server / srv 或 电脑 / computer / pc。', '示例：/t pc'));
+        if (!target) return answer(res, body, notice('指令错误', '执行端无效，原设置保持。', '可用：/t srv 或 /t pc'));
         await persist({ ...selection, target });
-        return answer(res, body, notice('设置成功', `默认执行端：${name(target)}`, '下一条任务生效 · 重启保留\n单次执行可用 /srv 任务 或 /pc 任务'));
+        return answer(res, body, settingNotice('默认执行端', name(target)));
       }
       if (command) {
         if (command.type === 'error') return answer(res, body, notice('指令错误', command.message));
-        if (command.type === 'help') return answer(res, body, help(command.value));
+        if (command.type === 'help') return answer(res, body, help(command.value, true));
         if (command.type === 'clear') return answer(res, body, notice('使用提示', '请在微信入口发送 /cl 清空短期对话。当前入口没有可清空的对话记录。'));
         if (command.type === 'reasoning') {
           const options = await reasoningOptions(config, selection.model);
           const effort = resolveEffort(command.value);
           if (!command.value || !effort || !options.includes(effort)) {
-            return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selection.model, selection.effort)) : await reasoningHelp(config, selection.model, selection.effort));
+            return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '/r 查看可用档位') : await reasoningHelp(config, selection.model, selection.effort));
           }
           await persist({ ...selection, effort });
-          return answer(res, body, notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n适用于服务器和电脑执行端\n指令：/r\n说明：查看推理编号'));
+          return answer(res, body, settingNotice('推理', effortShort(effort)));
         }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
-          if (!model) return answer(res, body, notice('指令错误', '模型名称无效，原设置保持。', help('model')));
+          if (!model) return answer(res, body, notice('指令错误', '模型名称无效，原设置保持。', '/m 查看模型选项'));
           try { await apiConfig(config, model); }
-          catch (error) { return answer(res, body, error.message); }
+          catch (error) { return answer(res, body, notice('配置未完成', error.message)); }
           const options = await reasoningOptions(config, model);
           const effort = !options.length || options.includes(selection.effort) ? selection.effort : 'auto';
           await persist({ ...selection, model, effort });
-          return answer(res, body, notice('设置成功', `模型：${model}\n推理：${model.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条消息\n切换：不调用模型', model.includes('/') ? '计费：所选提供商 API\n能力：当前仅聊天' : '额度：ChatGPT账号的Codex额度\n实际模型权限需调用验证。', '指令：/m\n说明：查看模型选项\n\n指令：/r\n说明：查看推理档位'));
+          return answer(res, body, settingNotice('模型', modelLabel(model), model.includes('/')
+            ? '下一条消息生效；按所选 API 计费，当前仅聊天。'
+            : `推理：${effortShort(effort)}\n下一条消息生效，使用账号的Codex额度。`));
         }
         if (command.type === 'status') {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
-          return answer(res, body, notice('运行状态', `服务器接收端在线\n接收状态：✓ 在线\n服务器执行进程：${remote ? '✓ 在线' : '✗ 未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '✓ 已登录（额度需调用验证）' : remote?.authenticated === false ? '✗ 未登录' : '尚未验证'}\n电脑执行端：${computer ? '✓ 在线' : '✗ 离线'}`, currentSettings(), `当前路径：微信 → 服务器 → ${selection.target === 'computer' ? '电脑' : '服务器Codex'}`, '指令：/h\n说明：查看全部帮助\n\n指令：/m\n说明：查看模型选项\n\n指令：/r\n说明：查看推理档位\n\n指令：/t\n说明：查看默认执行端'));
+          return answer(res, body, statusText({ ...viewState(), serverOnline: Boolean(remote), computerOnline: Boolean(computer), authenticated: remote?.authenticated }));
         }
         return answer(res, body, help(command.type));
       }

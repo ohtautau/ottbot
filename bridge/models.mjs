@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 export const MODELS = Object.freeze({
   luna: 'gpt-6-luna', terra: 'gpt-6.1-terra', sol: 'gpt-6.1-sol', astra: 'gpt-6-astra',
 });
-const MODEL_CHOICES = Object.freeze({ '1': 'luna', '2': 'sol', '3': 'terra', '4': 'astra' });
+export const MODEL_CHOICES = Object.freeze({ '1': 'luna', '2': 'sol', '3': 'terra', '4': 'astra' });
 
 export function resolveModel(value) {
   if (typeof value !== 'string' || value.length > 150) return null;

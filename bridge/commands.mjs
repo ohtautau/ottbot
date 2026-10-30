@@ -1,3 +1,5 @@
+import { MODELS, MODEL_CHOICES } from './models.mjs';
+
 // Single command registry shared by the channel, router and workers.
 export const COMMANDS = Object.freeze([
   { type: 'help', aliases: ['帮助', 'help', 'h', '?'] },
@@ -34,7 +36,8 @@ export function parseCommand(text) {
   }
   if (argument && /\s/.test(argument)) return { type: 'error', message: '该设置指令只接受一个参数。示例：/m sol、/r 2、/t pc。' };
   if (type === 'help' && argument) {
-    const topic = lookup.get(argument.toLowerCase().replace(/^[\/／]/, ''));
+    const name = argument.toLowerCase().replace(/^[\/／]/, '');
+    const topic = ['a', 'alias', 'aliases', '别名'].includes(name) ? 'aliases' : lookup.get(name);
     return topic ? { type: 'help', value: topic } : { type: 'error', message: '未找到这个帮助主题。发送 /h 查看全部指令。' };
   }
   if (type === 'reasoning' || type === 'target' || /^(?:luna|sol|terra|astra|codex\/(?:luna|sol|terra|astra))$/i.test(argument)) argument = argument.toLowerCase();
@@ -47,70 +50,71 @@ function displayWidth(value) {
 
 export function textTable(headers, rows) {
   const clean = value => String(value).replace(/[\r\n│]/g, ' ').trim();
-  const data = [headers, ...rows].map(row => row.map(clean));
+  const data = [...(headers ? [headers] : []), ...rows].map(row => row.map(clean));
+  if (!data.length) return '';
   const width = Math.max(...data.map(row => displayWidth(row[0])));
-  const line = row => row[0] + ' '.repeat(width - displayWidth(row[0]) + 4) + row[1];
-  return [line(data[0]), '', ...data.slice(1).map(line)].join('\n');
+  return data.map(row => row[0] + ' '.repeat(width - displayWidth(row[0]) + 3) + row[1]).join('\n');
 }
 
-function tableSection(section) {
-  if (/^(?:指令 {2,}说明|项目 {2,}内容|参数 {2,}说明)\n/.test(section)) return section;
-  const lines = section.split('\n');
-  const parts = [];
-  let rows = [], kind = '';
-  const flush = () => {
-    if (rows.length) parts.push(textTable(kind === 'command' ? ['指令', '说明'] : ['项目', '内容'], rows));
-    rows = []; kind = '';
-  };
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const command = lines[i].match(/^指令：(.*)$/);
-    const description = lines[i + 1]?.match(/^说明：(.*)$/);
-    if (command && description) {
-      if (kind && kind !== 'command') flush();
-      kind = 'command'; rows.push([command[1], description[1]]); i++; continue;
-    }
-    const field = lines[i].match(/^([^：]{1,16})：(.+)$/);
-    if (field) {
-      if (kind && kind !== 'field') flush();
-      kind = 'field'; rows.push([field[1], field[2]]); continue;
-    }
-    flush(); parts.push(lines[i]);
-  }
-  flush();
-  return parts.join('\n\n');
-}
+export const compactRows = rows => textTable(null, rows);
 
+// View builders supply their own sections. Do not guess structure from colons.
 export function notice(title, ...sections) {
-  return `【${title}】\n\n${sections.filter(Boolean).map(tableSection).join('\n\n────────\n\n')}`;
+  return [`【${title}】`, ...sections.filter(Boolean).map(section => String(section).trim())].join('\n\n');
 }
 
 export function commandItem(command, description) {
-  return `指令：${command}\n说明：${description}`;
+  return compactRows([[command, description]]);
 }
 
-export function helpText(topic = '', state = '') {
-  const entries = {
-    model: ['模型选择',
-      [commandItem('/m 1', '选择 Luna；也可发送 /m luna'), commandItem('/m 2', '选择 Sol；也可发送 /m sol'), commandItem('/m 3', '选择 Terra；也可发送 /m terra'), commandItem('/m 4', '选择 Astra；也可发送 /m astra')].join('\n\n'),
-      commandItem('/m', '查看当前模型和可用参数。/模型、/model 与 /m 等价。'),
-      [commandItem('/m 完整模型ID', '指定其他 Codex 模型。'), commandItem('/m 提供商/模型ID', '使用已配置的 API，例如 /m qwen/qwen-plus。')].join('\n\n'),
-      'API 需先在服务器配置 Key；明确切换后计费，不自动回退。'],
-    reasoning: ['推理设置',
-      [commandItem('/r', '查看当前模型可用编号。'), commandItem('/r 2', '将推理强度设为中等。')].join('\n\n'),
-      textTable(['参数', '说明'], [['0', '模型默认'], ['1', '低'], ['2', '中'], ['3', '高'], ['4', '超高'], ['5', '最大'], ['6', '极致']]),
-      '编号固定，只能选择当前模型支持的档位；API 推理参数暂未接入。'],
-    target: ['默认执行端',
-      [commandItem('/t 服务器', '后续任务默认在服务器执行；英文参数为 srv。'), commandItem('/t 电脑', '后续任务默认在电脑执行；英文参数为 pc。'), commandItem('/t', '查看当前默认执行端。')].join('\n\n'),
-      '切换默认只影响后续任务；电脑离线不会转交服务器。'],
-    route: ['单次执行', [commandItem('/srv 任务内容', '本次交给服务器执行。'), commandItem('/pc 任务内容', '本次交给电脑执行。')].join('\n\n'), '支持多行任务；仅影响本次，不改变默认执行端。'],
-    status: ['运行状态', commandItem('/st', '查看连接、登录、当前模型和推理档位。'), '状态不调用模型，不能验证实际额度。'],
-    clear: ['清空上下文', commandItem('/cl', '清空微信短期对话上下文。'), '不删除微信聊天记录或博客数据。'],
-  };
-  if (topic === 'server' || topic === 'computer') topic = 'route';
-  if (entries[topic]) return notice('指令帮助', ...entries[topic], state);
-  return notice('指令帮助', state,
-    '常用指令（中文 / 英文 / 缩写）\n\n' + [commandItem('/帮助 /help /h', '查看全部帮助。'), commandItem('/状态 /status /st', '查看运行状态。'), commandItem('/模型 /model /m', '查看或切换模型。'), commandItem('/推理 /reasoning /r', '查看或调整推理强度。'), commandItem('/执行 /target /t', '设置默认执行端。'), commandItem('/服务器 /server /srv', '指定本次在服务器执行。'), commandItem('/电脑 /computer /pc', '指定本次在电脑执行。'), commandItem('/清空 /clear /cl', '清空微信短期上下文。')].join('\n\n'),
-    '快速示例\n\n' + [commandItem('/m 2', '选择 Sol。'), commandItem('/r 2', '推理设为中等。'), commandItem('/t pc', '默认在电脑执行。'), commandItem('/h r', '查看推理主题帮助。')].join('\n\n'),
-    '规则\n指令以 / 开头，命令和参数用空格分隔。\n英文命令忽略大小写，也支持全角 ／。\n未知或错误指令只返回提示，不交给 AI。\n裸数字和正文中的 / 保持普通聊天。\n设置指令不调用模型，保存后下一条任务生效。');
+export function modelLabel(model = '') {
+  const entry = Object.entries(MODELS).find(([, id]) => id === model);
+  return entry ? entry[0][0].toUpperCase() + entry[0].slice(1) : model;
+}
+
+export function settingNotice(label, value, note = '下一条任务生效，重启保留。') {
+  return notice('已设置', `${label}：${value}`, note);
+}
+
+export function statusText(state) {
+  const login = state.authenticated === true ? '✓ 已登录' : state.authenticated === false ? '✗ 未登录' : '未验证';
+  return notice('状态', compactRows([
+    ['接收端', '✓ 在线'],
+    ['服务器', state.serverOnline ? '✓ 在线' : '✗ 离线'],
+    ['Codex', login],
+    ['电脑', state.computerOnline ? '✓ 在线' : '✗ 离线'],
+  ]), `默认：${state.target === 'computer' ? '电脑' : '服务器'}\n模型：${modelLabel(state.model)}\n推理：${state.effortText}`, '/h 帮助');
+}
+
+export function helpText(topic = '', state = {}, detailed = false) {
+  const model = state.model || '';
+  const current = model ? `当前：${modelLabel(model)}` : '';
+  const choices = Object.values(MODEL_CHOICES).map(alias => MODELS[alias]);
+  if (topic === 'model') {
+    const menu = compactRows(choices.map((id, index) => [`/m ${index + 1}`, modelLabel(id) + (id === model ? '  ← 当前' : '')]));
+    return detailed ? notice('模型用法', current, menu,
+      '同一选择可用：/m 2、/m sol、/模型 2',
+      '其他 Codex 模型：\n/m 完整模型ID\n\n已配置的 API，例如：\n/m qwen/qwen-plus',
+      'API 需先配置 Key，按提供商计费；不自动回退。')
+      : notice('模型', current, menu, '发送 /m 2 选择 Sol\n英文参数与 API：/h m');
+  }
+  if (topic === 'reasoning') return notice('推理用法', compactRows([
+    ['/r', '查看本模型可用档位'], ['/r 2', '中等推理'], ['/r auto', '模型默认'],
+  ]), '中文、英文参数均可，例如 /推理 中、/r medium。\n编号固定；不支持的档位不会保存。\nAPI 通道的推理参数暂未接入。');
+  if (topic === 'target') return notice('默认执行端', state.target ? `当前：${state.target === 'computer' ? '电脑' : '服务器'}` : '',
+    compactRows([['/t srv', '服务器' + (state.target === 'server' ? '  ← 当前' : '')], ['/t pc', '电脑' + (state.target === 'computer' ? '  ← 当前' : '')]]),
+    detailed ? '也可用 /执行 服务器、/t 电脑。\n只影响后续任务；电脑离线不转交其他机器。\n单次指定：/srv 任务 或 /pc 任务' : '单次指定：/srv 任务 或 /pc 任务\n电脑离线不转交其他机器。');
+  if (['route', 'server', 'computer'].includes(topic)) return notice('单次执行', compactRows([
+    ['/srv 任务', '交给服务器'], ['/pc 任务', '交给电脑'],
+  ]), '可写多行任务；不改变默认执行端。');
+  if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '连接正常不代表模型额度充足。');
+  if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留微信聊天记录和博客数据。');
+  if (topic === 'aliases') return notice('指令别名', compactRows(COMMANDS.map(item => {
+    const canonical = { help: '/h', status: '/st', model: '/m', reasoning: '/r', target: '/t', server: '/srv', computer: '/pc', clear: '/cl' }[item.type];
+    return [canonical, item.aliases.map(alias => '/' + alias).filter(alias => alias !== canonical).join('  ')];
+  })), '每行写法等价；英文命令忽略大小写。');
+  return notice('帮助', compactRows([
+    ['/st', '查看状态'], ['/m', '选择模型'], ['/r', '调整推理'], ['/t', '默认执行端'],
+    ['/srv', '服务器任务'], ['/pc', '电脑任务'], ['/cl', '清空上下文'],
+  ]), '示例：/m 2、/r 2、/t pc\n详细：/h m、/h r、/h t\n中文 / 英文 / 缩写：/h a');
 }

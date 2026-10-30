@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { MODELS } from './models.mjs';
-import { notice, commandItem } from './commands.mjs';
+import { notice, compactRows } from './commands.mjs';
 
 const LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const NUMBERED = Object.freeze({ '0': 'auto', '1': 'low', '2': 'medium', '3': 'high', '4': 'xhigh', '5': 'max', '6': 'ultra' });
@@ -10,6 +10,11 @@ const ALIASES = { ...NUMBERED, '低': 'low', '中': 'medium', '高': 'high', '�
 export function effortLabel(effort) {
   const number = Object.keys(NUMBERED).find(key => NUMBERED[key] === effort);
   return `${number === undefined ? '' : number + ' · '}${effort}（${LABELS[effort] || effort}）`;
+}
+
+export function effortShort(effort) {
+  const number = Object.keys(NUMBERED).find(key => NUMBERED[key] === effort);
+  return (LABELS[effort] || effort) + (number === undefined ? '' : `（${number}）`);
 }
 
 export function resolveEffort(value) {
@@ -34,8 +39,11 @@ export async function reasoningOptions(config, model) {
 }
 
 export async function reasoningHelp(config, model, effort) {
-  if (model.includes('/')) return '当前为 API 通道，尚未接入提供商各自的推理参数；/推理 不会修改或发送 API 参数。切回 Codex 后可设置。';
+  if (model.includes('/')) return notice('推理', '当前为 API 通道，暂不支持修改推理参数。', '/m 2 切回 Codex');
   const options = await reasoningOptions(config, model);
-  const menu = options.map(level => commandItem('/r ' + (Object.keys(NUMBERED).find(number => NUMBERED[number] === level) ?? level), effortLabel(level) + (level === effort ? ' ← 当前' : ''))).join('\n\n');
-  return notice('推理设置', `当前推理强度：${effortLabel(effort)}`, `可用档位（编号固定，不随模型变化）：\n${menu}`, commandItem('/r ' + (options.includes('medium') ? '2' : '0'), options.includes('medium') ? '设为中等；也可发送 /r medium 或 /推理 中。' : '使用模型默认推理强度。'), '生效：下一条任务\n保存：重启保留\n消耗：设置本身不调用模型；较高档位通常更慢、消耗更多额度。');
+  const menu = compactRows(options.map(level => [
+    '/r ' + (Object.keys(NUMBERED).find(number => NUMBERED[number] === level) ?? level),
+    (LABELS[level] || level) + (level === effort ? '  ← 当前' : ''),
+  ]));
+  return notice('推理', `当前：${effortShort(effort)}`, menu, '仅列出本模型支持的档位。\n档位越高通常越慢、越耗额度；用法见 /h r');
 }

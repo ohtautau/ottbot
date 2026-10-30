@@ -8,10 +8,10 @@ import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { MODELS, resolveModel, apiConfig, runApi } from './models.mjs';
-import { resolveEffort, reasoningOptions, reasoningHelp, effortLabel } from './reasoning.mjs';
+import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
 export { MODELS } from './models.mjs';
-import { parseCommand, helpText, notice } from './commands.mjs';
+import { parseCommand, helpText, notice, compactRows, modelLabel, settingNotice } from './commands.mjs';
 export { parseCommand } from './commands.mjs';
 const LIMIT = 24 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
@@ -193,7 +193,7 @@ export async function createWorker(config, execute = runCodex) {
     selected = model; effort = nextEffort;
   };
   let busy = false;
-  const help = topic => helpText(topic, `当前模型：${selected}\n推理：${selected.includes('/') ? 'API默认' : effortLabel(effort)}`);
+  const help = (topic, detailed = false) => helpText(topic, { model: selected }, detailed);
   const server = http.createServer(async (req, res) => {
     res.on('error', () => {});
     if (!authorized(req.headers.authorization, config.workerToken)) return json(res, 401, { error: { message: 'Unauthorized' } });
@@ -232,26 +232,28 @@ export async function createWorker(config, execute = runCodex) {
         if (command.type === 'error') {
           answer = notice('指令错误', command.message);
         } else if (command.type === 'help') {
-          answer = help(command.value);
+          answer = help(command.value, true);
         } else if (command.type === 'reasoning') {
           const options = await reasoningOptions(config, selected);
           const chosen = resolveEffort(command.value);
           if (command.value && chosen && options.includes(chosen)) {
             await persist(selected, chosen);
-            answer = notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n指令：/r\n说明：查看推理编号');
-          } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selected, effort)) : await reasoningHelp(config, selected, effort);
+            answer = settingNotice('推理', effortShort(effort));
+          } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '/r 查看可用档位') : await reasoningHelp(config, selected, effort);
         } else if (command.type === 'model' && command.value) {
           const chosen = resolveModel(command.value);
-          if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', help('model'));
+          if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', '/m 查看模型选项');
           else {
             await apiConfig(config, chosen);
             const options = await reasoningOptions(config, chosen);
             const nextEffort = !options.length || options.includes(effort) ? effort : 'auto';
             await persist(chosen, nextEffort);
-            answer = notice('设置成功', `模型：${selected}\n推理：${chosen.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条任务\n切换：不调用模型', '指令：/m\n说明：查看模型选项\n\n指令：/r\n说明：查看推理档位');
+            answer = settingNotice('模型', modelLabel(selected), chosen.includes('/')
+              ? '下一条消息生效；按所选 API 计费，当前仅聊天。'
+              : `推理：${effortShort(effort)}\n下一条消息生效，使用账号的Codex额度。`);
           }
         } else answer = request.command.type === 'status'
-          ? `转接已连接，Codex 执行端可接收任务。\n当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n认证：每次模型调用前检查 ChatGPT 登录\n执行权限：${config.sandbox || 'read-only'}；博客授权接口尚未接入。\n本状态检查不验证模型额度。`
+          ? notice('执行端', compactRows([['连接', '✓ 在线'], ['模型', modelLabel(selected)], ['推理', selected.includes('/') ? 'API默认' : effortShort(effort)], ['权限', config.sandbox || 'read-only']]), '/h 帮助；额度需实际调用验证。')
           : help(command.type);
       } else answer = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
       if (res.destroyed) return;
