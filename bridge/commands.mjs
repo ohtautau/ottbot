@@ -101,11 +101,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
   ]), '说明：括号不用输入；| 两侧只选一个。\n示例：/srv 查看目录、/h、/h m、/t 电脑');
   if (topic === 'model') {
     const menu = compactRows(choices.map((id, index) => [`/m ${index + 1}`, modelLabel(id) + (id === model ? '  ← 当前' : '')]));
-    return detailed ? notice('模型用法', current, menu,
-      '用法：/m [模型]\n说明：省略参数查看，填写参数切换。\n同一选择可用：/m 2、/m sol、/模型 2',
-      '其他 Codex 模型：/m <模型ID>\n已配置的 API：/m <提供商>/<模型ID>\n示例：/m qwen/qwen-plus',
-      '说明：API 需先配置 Key，按提供商计费；不自动回退。')
-      : notice('模型', current, menu);
+    return notice('模型', current, menu);
   }
   if (topic === 'reasoning') return notice('推理用法', commandRows([
     ['/r', '查看本模型可用档位'], ['/r 2', '中等推理'], ['/r auto', '模型默认'],
