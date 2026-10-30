@@ -41,8 +41,48 @@ export function parseCommand(text) {
   return argument ? { type, value: argument } : ['model', 'reasoning'].includes(type) ? { type, value: '' } : { type };
 }
 
+function displayWidth(value) {
+  return [...value].reduce((width, char) => width + (/\p{Mark}/u.test(char) ? 0 : /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe6f\uff01-\uff60\uffe0-\uffe6]/u.test(char) || char.codePointAt(0) > 0xffff ? 2 : 1), 0);
+}
+
+export function textTable(headers, rows) {
+  const clean = value => String(value).replace(/[\r\n│]/g, ' ').trim();
+  const data = [headers, ...rows].map(row => row.map(clean));
+  const width = Math.max(...data.map(row => displayWidth(row[0])));
+  const line = row => row[0] + ' '.repeat(width - displayWidth(row[0])) + ' │ ' + row[1];
+  return [line(data[0]), '─'.repeat(width + 1) + '┼────────', ...data.slice(1).map(line)].join('\n');
+}
+
+function tableSection(section) {
+  if (section.includes('│')) return section;
+  const lines = section.split('\n');
+  const parts = [];
+  let rows = [], kind = '';
+  const flush = () => {
+    if (rows.length) parts.push(textTable(kind === 'command' ? ['指令', '说明'] : ['项目', '内容'], rows));
+    rows = []; kind = '';
+  };
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const command = lines[i].match(/^指令：(.*)$/);
+    const description = lines[i + 1]?.match(/^说明：(.*)$/);
+    if (command && description) {
+      if (kind && kind !== 'command') flush();
+      kind = 'command'; rows.push([command[1], description[1]]); i++; continue;
+    }
+    const field = lines[i].match(/^([^：]{1,16})：(.+)$/);
+    if (field) {
+      if (kind && kind !== 'field') flush();
+      kind = 'field'; rows.push([field[1], field[2]]); continue;
+    }
+    flush(); parts.push(lines[i]);
+  }
+  flush();
+  return parts.join('\n\n');
+}
+
 export function notice(title, ...sections) {
-  return `【${title}】\n\n${sections.filter(Boolean).join('\n\n────────\n\n')}`;
+  return `【${title}】\n\n${sections.filter(Boolean).map(tableSection).join('\n\n────────\n\n')}`;
 }
 
 export function commandItem(command, description) {
@@ -58,7 +98,7 @@ export function helpText(topic = '', state = '') {
       'API 需先在服务器配置 Key；明确切换后计费，不自动回退。'],
     reasoning: ['推理设置',
       [commandItem('/r', '查看当前模型可用编号。'), commandItem('/r 2', '将推理强度设为中等。')].join('\n\n'),
-      '参数编号\n0 默认 · 1 低 · 2 中 · 3 高\n4 超高 · 5 最大 · 6 极致',
+      textTable(['参数', '说明'], [['0', '模型默认'], ['1', '低'], ['2', '中'], ['3', '高'], ['4', '超高'], ['5', '最大'], ['6', '极致']]),
       '编号固定，只能选择当前模型支持的档位；API 推理参数暂未接入。'],
     target: ['默认执行端',
       [commandItem('/t 服务器', '后续任务默认在服务器执行；英文参数为 srv。'), commandItem('/t 电脑', '后续任务默认在电脑执行；英文参数为 pc。'), commandItem('/t', '查看当前默认执行端。')].join('\n\n'),
