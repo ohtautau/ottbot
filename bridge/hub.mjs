@@ -109,7 +109,7 @@ export async function createHub(config) {
             return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selection.model, selection.effort)) : await reasoningHelp(config, selection.model, selection.effort));
           }
           await persist({ ...selection, effort });
-          return answer(res, body, notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n适用于服务器和电脑执行端\n/r 查看编号')); 
+          return answer(res, body, notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n适用于服务器和电脑执行端\n/r 查看编号'));
         }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
