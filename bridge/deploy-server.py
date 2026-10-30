@@ -66,9 +66,11 @@ def main():
         if archive.wait() != 0:
             raise RuntimeError('Git archive failed; services were not switched.')
     bridge = release / 'bridge'
-    for name in ['worker.mjs', 'hub.mjs', 'weixin.mjs', 'models.mjs', 'reasoning.mjs', 'api-setup.mjs', 'images.mjs']:
+    if (shared / 'ottlog.json').exists():
+        run('python3', '-c', 'from PIL import Image')
+    for name in ['worker.mjs', 'hub.mjs', 'weixin.mjs', 'models.mjs', 'reasoning.mjs', 'api-setup.mjs', 'images.mjs', 'ottlog-client.mjs', 'ottlog-commands.mjs', 'note-images.mjs']:
         run(paths['node'], '--check', str(bridge / name))
-    run(paths['node'], '--test', *(str(bridge / name) for name in ['worker.test.mjs', 'hub.test.mjs', 'weixin.test.mjs', 'models.test.mjs', 'api-setup.test.mjs', 'images.test.mjs']))
+    run(paths['node'], '--test', *(str(bridge / name) for name in ['worker.test.mjs', 'hub.test.mjs', 'weixin.test.mjs', 'models.test.mjs', 'api-setup.test.mjs', 'images.test.mjs', 'ottlog-commands.test.mjs']))
     private_json(shared / 'providers.json', json.loads((bridge / 'providers.example.json').read_text()))
     relay = private_json(shared / 'relay.json', {
         'clientToken': secrets.token_hex(32), 'workerToken': secrets.token_hex(32),
@@ -97,12 +99,14 @@ def main():
             raise RuntimeError(f'{name} has a different private token; no switch was made.')
     units = Path.home() / '.config/systemd/user'
     units.mkdir(parents=True, exist_ok=True)
-    for name in ['ottbot-relay', 'ottbot-codex', 'ottbot-hub', 'ottbot-weixin']:
+    for name in ['ottbot-relay', 'ottbot-codex', 'ottbot-hub', 'ottbot-weixin', 'ottbot-ottlog']:
         (units / (name + '.service')).write_text((bridge / (name + '.service')).read_text())
     link(ROOT / 'current', bridge)
     link(ROOT / 'hybrid-current', bridge)
     run('sudo', '-n', 'loginctl', 'enable-linger', 'ubuntu')
     run('systemctl', '--user', 'daemon-reload')
+    if (shared / 'ottlog-tunnel.env').exists():
+        run('systemctl', '--user', 'enable', '--now', 'ottbot-ottlog.service')
     for name in ['ottbot-codex', 'ottbot-hub', 'ottbot-relay']:
         run('systemctl', '--user', 'enable', name + '.service')
         run('systemctl', '--user', 'restart', name + '.service')

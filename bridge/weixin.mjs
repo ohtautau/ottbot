@@ -9,6 +9,8 @@ import { routingCommand } from './hub.mjs';
 import { parseCommand } from './worker.mjs';
 import { createApiSetup } from './api-setup.mjs';
 import { validateReplyImages } from './images.mjs';
+import { createOttlogCommands } from './ottlog-commands.mjs';
+import { compressNoteImages } from './note-images.mjs';
 
 const API = 'https://ilinkai.weixin.qq.com';
 const CHANNEL_VERSION = '2.4.8';
@@ -128,8 +130,20 @@ export function formatWeixinText(text, menu = false) {
 export function receiptText(input, items = [], defaultTarget = 'server') {
   const text = input || items.filter(item => item.type === 3).map(item => item.voice_item?.text || '').join('\n');
   const command = parseCommand(text);
-  const target = command?.type === 'route' ? command.target : defaultTarget;
-  return !command || command.type === 'route' ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…` : '';
+  const target = ['today', 'todo', 'done', 'note', 'noteimg'].includes(command?.type) ? 'server' : command?.type === 'route' ? command.target : defaultTarget;
+  return !command || ['route', 'today', 'todo', 'done', 'note', 'noteimg'].includes(command.type) ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n收到，正在处理…` : '';
+}
+
+export function splitBlogText(text) {
+  const pages = []; let page = '';
+  for (const line of text.split('\n')) {
+    let rest = line;
+    while (rest.length > 1500) { if (page) { pages.push(page); page = ''; } pages.push(rest.slice(0, 1500)); rest = rest.slice(1500); }
+    if (page.length + rest.length + 1 > 1500) { pages.push(page); page = ''; }
+    page += (page ? '\n' : '') + rest;
+  }
+  if (page) pages.push(page);
+  return pages;
 }
 
 // Original-image upload and message format follow Tencent/openclaw-weixin's
@@ -189,6 +203,8 @@ export async function monitor(configPath) {
   const directory = dirname(configPath);
   const account = JSON.parse(await readFile(join(directory, 'weixin-account.json'), 'utf8'));
   const apiSetup = await createApiSetup({ providersFile: join(directory, 'providers.json'), pendingFile: join(directory, 'api-setup-pending.json') });
+  process.env.TZ = 'Asia/Shanghai';
+  const ottlog = await createOttlogCommands({ configFile: join(directory, 'ottlog.json'), stateFile: join(directory, 'ottlog-command-state.json'), compressImages: compressNoteImages });
   trustedWeixinUrl(account.baseUrl);
   if (!account.token || !account.owner) throw new Error('微信尚未绑定。');
   const cursorFile = join(directory, 'weixin-cursor.json');
@@ -214,6 +230,8 @@ export async function monitor(configPath) {
         try {
           const items = message.item_list || [];
           const input = items.filter(item => item.type === 1).map(item => item.text_item?.text || '').join('\n').trim();
+          const hasImages = items.some(item => item.type === 2);
+          await ottlog.cancelImageModeIfText(hasImages);
           const setup = await apiSetup.handle(input, items.some(item => item.type !== 1));
           if (setup.handled) {
             await send(message, setup.text, true);
@@ -222,8 +240,10 @@ export async function monitor(configPath) {
           let defaultTarget;
           try { defaultTarget = JSON.parse(await readFile(join(directory, 'hub-runtime/hub-selection.json'), 'utf8')).target; }
           catch (error) { if (error.code !== 'ENOENT') throw error; defaultTarget = 'server'; }
-          const receipt = receiptText(input, items, defaultTarget);
+          const receipt = receiptText(input, items, ottlog.imageMode && hasImages ? 'server' : defaultTarget);
           if (receipt) await send(message, receipt).catch(() => console.error('微信接收确认发送失败，继续处理。'));
+          const blog = await ottlog.handle(input, { hasImages, readImages: async () => (await receiveContent(message)).filter(part => part.type === 'image_url').map(part => ({ dataUrl: part.image_url.url })) });
+          if (blog.handled) { for (const page of splitBlogText(blog.text)) await send(message, page, true); continue; }
           const content = await receiveContent(message);
           const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
           if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {

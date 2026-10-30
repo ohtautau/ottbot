@@ -9,6 +9,15 @@
 
 ## 微信指令
 
+- `/today` 或单独的 `hi`（不区分大小写）：按优先级显示3项今天任务（含逾期和未排日期）；按时段和优先级显示3项今日未完成习惯；按原习惯提醒卡规则显示3项提醒。
+- `/todo <任务名>`：添加高优先级任务。`/todo`、`/todolist`、`/todo list` 查看四象限任务；`/done <编号或完整任务名>` 完成任务。编号跨重启保持，同名任务要求用编号；完成沿用Ottlog的循环与下一步逻辑。
+- `/note <内容>`：新增便签；`/note`、`/notelist`、`/note list` 查看最近10条。`/node`、`/nodelist`、`/node list` 兼容相同用法。
+- `/noteimg` 或 `/note img`（也支持 `/nodeimg`、`/node img`）：10分钟内后续图片消息各存一条便签。发送非图片即退出并正常处理新消息；大图片压缩到现有180KB限制，压缩失败不假装保存成功。
+
+这些命令由微信入口直接调用已绑定账号的Ottlog API，不进入模型和模型历史。通过既有登录Cookie和CSRF验证账号，不直写数据库；每次修改重新读取数据并检查变化，失败保留原业务字段。后端现有接口为整份存档保存，客户端前置检查无法提供跨设备原子比较交换。Cookie仅放服务器私有`shared/ottlog.json`，不保存密码；登录失效时需要重新绑定。私有SSH隧道由`ottbot-ottlog`维持，不开放公网端口。
+
+业务函数从Ottlog小程序共用模型构建到`ottlog-shared.mjs`（重建：`node bridge/build-ottlog-shared.mjs <ottlog目录>`），复用任务完成/循环、四象限、习惯时段、提醒排序、存档验证及图片限制。图片压缩需系统`python3-pil`。
+
 - `/状态`：查看服务器、Codex 登录与电脑连接。
 - `/推理`：查看当前模型支持的推理档位；`/推理 medium` 修改，`/推理 auto` 使用模型默认值。设置从下一条任务生效，重启保留；当前只适用于 Codex 通道。
 - 数字快捷设置：`/推理 0` 默认、`1` 低、`2` 中、`3` 高、`4` 超高、`5` 最大、`6` 极致。每个数字都需带 `/推理` 前缀；编号不随模型变化，不支持的档位拒绝设置，`/推理` 显示可用编号和当前选择。
@@ -43,7 +52,7 @@ CodeBuddy 自定义模型填写本机 `local-state/codex-bridge/codebuddy-settin
 ## 验证
 
 ```sh
-node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs bridge/models.test.mjs bridge/api-setup.test.mjs bridge/images.test.mjs
+node --test bridge/worker.test.mjs bridge/hub.test.mjs bridge/weixin.test.mjs bridge/models.test.mjs bridge/api-setup.test.mjs bridge/images.test.mjs bridge/ottlog-commands.test.mjs
 ```
 
 测试使用临时配置、模拟 Codex 和 API，不调用真实付费模型、不写入博客。实际登录、照片、博客授权写入和电脑操作需要分别验收。

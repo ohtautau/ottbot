@@ -59,6 +59,7 @@ export async function createApiSetup({ providersFile, pendingFile, now = Date.no
     draft = null; blocked = false;
   }
   return {
+    get active() { return Boolean(draft || blocked); },
     async handle(text, hasAttachments = false) {
       const command = parseCommand(text);
       const isApi = command?.type === 'api';

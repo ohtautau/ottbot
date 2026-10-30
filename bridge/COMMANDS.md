@@ -1,5 +1,7 @@
 # 聊天指令规范
 
+博客快捷指令：`/today`与独立的`hi`/`HI`同义；`/todo <任务名>`新增高优先级任务，`/todo`/`/todolist`/`/todo list`列出四象限；`/done <编号或完整名称>`完成任务，编号稳定且不随列表顺序变化，同名拒绝猜测。`/note <内容>`新增便签，`/note`/`/notelist`/`/note list`查看最近10条；`node`/`nodelist`保留兼容。`/noteimg`/`/note img`及`/nodeimg`/`/node img`进入后续图片保存便签模式；任何非图片消息先退出再正常处理。账号配置/API向导优先，敏感输入不进入博客命令或模型。博客命令总在服务器处理，与模型和默认执行端无关；帮助主题`/h today`、`/h todo`、`/h done`、`/h note`可查。
+
 图片通过普通对话发送给Codex或所选API，不提供专用图片指令。Codex图片回传仍支持本地图片附件及专用生成目录。
 
 

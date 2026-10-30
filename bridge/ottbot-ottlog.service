@@ -1,0 +1,15 @@
+[Unit]
+Description=Ottbot private Ottlog API tunnel
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/home/ubuntu/ottbot-relay/shared/ottlog-tunnel.env
+ExecStart=/usr/bin/ssh -NT -L 127.0.0.1:18893:127.0.0.1:8088 -i /home/ubuntu/ottbot-relay/shared/ottlog-ssh -o BatchMode=yes -o ConnectTimeout=10 -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/ottbot-relay/shared/ottlog-known-hosts ${OTTBOT_BLOG_SSH_TARGET}
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
