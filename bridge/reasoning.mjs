@@ -45,5 +45,5 @@ export async function reasoningHelp(config, model, effort) {
     LABELS[level] || level,
     '/r ' + (Object.keys(NUMBERED).find(number => NUMBERED[number] === level) ?? level) + (level === effort ? '  ← 当前' : ''),
   ]));
-  return notice('推理', `当前：${effortShort(effort)}`, menu, '说明：仅列出本模型支持的档位。\n提示：档位越高通常越慢、越耗额度。\n用法：/h r');
+  return notice('推理', `当前：${effortShort(effort)}`, menu);
 }
