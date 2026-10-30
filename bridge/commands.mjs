@@ -45,19 +45,32 @@ export function notice(title, ...sections) {
   return `【${title}】\n\n${sections.filter(Boolean).join('\n\n────────\n\n')}`;
 }
 
+export function commandItem(command, description) {
+  return `指令：${command}\n说明：${description}`;
+}
+
 export function helpText(topic = '', state = '') {
   const entries = {
-    model: ['模型选择', '参数：模型编号 或 英文名称\n\n1. Luna → /m 1\n   英文写法：/m luna\n\n2. Sol → /m 2\n   英文写法：/m sol\n\n3. Terra → /m 3\n   英文写法：/m terra\n\n4. Astra → /m 4\n   英文写法：/m astra', '示例：/模型 2 → 选择 Sol\n查看当前模型：/m\n中文、英文和缩写命令均可搭配编号。', '其他 Codex 模型：/m 完整模型ID\n已配置的 API：/m 提供商/模型ID\n例如：/m qwen/qwen-plus\nAPI 需先在服务器配置 Key；明确切换后计费，不自动回退。'],
-    reasoning: ['推理 / reasoning / r', '/r 查看当前模型可用编号\n/r 2 设置为中等\n0 默认 · 1 低 · 2 中 · 3 高\n4 超高 · 5 最大 · 6 极致', '编号固定，只能选择当前模型支持的档位；API 推理参数暂未接入。'],
-    target: ['默认执行端', '参数：服务器 或 电脑\n\n/t 服务器 → 后续默认在服务器执行\n/t 电脑 → 后续默认在电脑执行\n\n英文参数也可用：srv / pc\n查看当前选择：/t', '切换默认只影响后续任务；电脑离线不会转交服务器。'],
-    route: ['单次执行', '/srv 任务内容 → 服务器\n/pc 任务内容 → 电脑', '支持多行任务；仅影响本次，不改变默认执行端。'],
-    status: ['状态 / status / st', '/st 查看连接、登录、当前模型和推理档位', '状态不调用模型，不能验证实际额度。'],
-    clear: ['清空 / clear / cl', '/cl 清空微信短期对话上下文', '不删除微信聊天记录或博客数据。'],
+    model: ['模型选择',
+      [commandItem('/m 1', '选择 Luna；也可发送 /m luna'), commandItem('/m 2', '选择 Sol；也可发送 /m sol'), commandItem('/m 3', '选择 Terra；也可发送 /m terra'), commandItem('/m 4', '选择 Astra；也可发送 /m astra')].join('\n\n'),
+      commandItem('/m', '查看当前模型和可用参数。/模型、/model 与 /m 等价。'),
+      [commandItem('/m 完整模型ID', '指定其他 Codex 模型。'), commandItem('/m 提供商/模型ID', '使用已配置的 API，例如 /m qwen/qwen-plus。')].join('\n\n'),
+      'API 需先在服务器配置 Key；明确切换后计费，不自动回退。'],
+    reasoning: ['推理设置',
+      [commandItem('/r', '查看当前模型可用编号。'), commandItem('/r 2', '将推理强度设为中等。')].join('\n\n'),
+      '参数编号\n0 默认 · 1 低 · 2 中 · 3 高\n4 超高 · 5 最大 · 6 极致',
+      '编号固定，只能选择当前模型支持的档位；API 推理参数暂未接入。'],
+    target: ['默认执行端',
+      [commandItem('/t 服务器', '后续任务默认在服务器执行；英文参数为 srv。'), commandItem('/t 电脑', '后续任务默认在电脑执行；英文参数为 pc。'), commandItem('/t', '查看当前默认执行端。')].join('\n\n'),
+      '切换默认只影响后续任务；电脑离线不会转交服务器。'],
+    route: ['单次执行', [commandItem('/srv 任务内容', '本次交给服务器执行。'), commandItem('/pc 任务内容', '本次交给电脑执行。')].join('\n\n'), '支持多行任务；仅影响本次，不改变默认执行端。'],
+    status: ['运行状态', commandItem('/st', '查看连接、登录、当前模型和推理档位。'), '状态不调用模型，不能验证实际额度。'],
+    clear: ['清空上下文', commandItem('/cl', '清空微信短期对话上下文。'), '不删除微信聊天记录或博客数据。'],
   };
   if (topic === 'server' || topic === 'computer') topic = 'route';
   if (entries[topic]) return notice('指令帮助', ...entries[topic], state);
   return notice('指令帮助', state,
-    '常用指令（中文 / 英文 / 缩写）\n1. 帮助 / help / h\n2. 状态 / status / st\n3. 模型 / model / m\n4. 推理 / reasoning / r\n5. 执行 / target / t\n6. 服务器 / server / srv\n7. 电脑 / computer / pc\n8. 清空 / clear / cl',
-    '快速示例\n/m sol　切换模型\n/r 2　推理设为中等\n/t pc　默认在电脑执行\n/srv 任务内容　仅本次在服务器执行\n/h r　查看推理帮助',
+    '常用指令（中文 / 英文 / 缩写）\n\n' + [commandItem('/帮助 /help /h', '查看全部帮助。'), commandItem('/状态 /status /st', '查看运行状态。'), commandItem('/模型 /model /m', '查看或切换模型。'), commandItem('/推理 /reasoning /r', '查看或调整推理强度。'), commandItem('/执行 /target /t', '设置默认执行端。'), commandItem('/服务器 /server /srv', '指定本次在服务器执行。'), commandItem('/电脑 /computer /pc', '指定本次在电脑执行。'), commandItem('/清空 /clear /cl', '清空微信短期上下文。')].join('\n\n'),
+    '快速示例\n\n' + [commandItem('/m 2', '选择 Sol。'), commandItem('/r 2', '推理设为中等。'), commandItem('/t pc', '默认在电脑执行。'), commandItem('/h r', '查看推理主题帮助。')].join('\n\n'),
     '规则\n指令以 / 开头，命令和参数用空格分隔。\n英文命令忽略大小写，也支持全角 ／。\n未知或错误指令只返回提示，不交给 AI。\n裸数字和正文中的 / 保持普通聊天。\n设置指令不调用模型，保存后下一条任务生效。');
 }

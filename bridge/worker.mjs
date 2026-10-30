@@ -238,7 +238,7 @@ export async function createWorker(config, execute = runCodex) {
           const chosen = resolveEffort(command.value);
           if (command.value && chosen && options.includes(chosen)) {
             await persist(selected, chosen);
-            answer = notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n/r 查看编号');
+            answer = notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n指令：/r\n说明：查看推理编号');
           } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selected, effort)) : await reasoningHelp(config, selected, effort);
         } else if (command.type === 'model' && command.value) {
           const chosen = resolveModel(command.value);
@@ -248,7 +248,7 @@ export async function createWorker(config, execute = runCodex) {
             const options = await reasoningOptions(config, chosen);
             const nextEffort = !options.length || options.includes(effort) ? effort : 'auto';
             await persist(chosen, nextEffort);
-            answer = notice('设置成功', `模型：${selected}\n推理：${chosen.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条任务\n切换：不调用模型', '/m 查看模型　/r 查看推理');
+            answer = notice('设置成功', `模型：${selected}\n推理：${chosen.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条任务\n切换：不调用模型', '指令：/m\n说明：查看模型选项\n\n指令：/r\n说明：查看推理档位');
           }
         } else answer = request.command.type === 'status'
           ? `转接已连接，Codex 执行端可接收任务。\n当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n认证：每次模型调用前检查 ChatGPT 登录\n执行权限：${config.sandbox || 'read-only'}；博客授权接口尚未接入。\n本状态检查不验证模型额度。`

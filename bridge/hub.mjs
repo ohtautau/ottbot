@@ -109,7 +109,7 @@ export async function createHub(config) {
             return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', await reasoningHelp(config, selection.model, selection.effort)) : await reasoningHelp(config, selection.model, selection.effort));
           }
           await persist({ ...selection, effort });
-          return answer(res, body, notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n适用于服务器和电脑执行端\n/r 查看编号'));
+          return answer(res, body, notice('设置成功', `推理强度：${effortLabel(effort)}`, '下一条任务生效 · 重启保留\n适用于服务器和电脑执行端\n指令：/r\n说明：查看推理编号'));
         }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
@@ -119,11 +119,11 @@ export async function createHub(config) {
           const options = await reasoningOptions(config, model);
           const effort = !options.length || options.includes(selection.effort) ? selection.effort : 'auto';
           await persist({ ...selection, model, effort });
-          return answer(res, body, notice('设置成功', `模型：${model}\n推理：${model.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条消息\n切换：不调用模型', model.includes('/') ? '计费：所选提供商 API\n能力：当前仅聊天' : '额度：ChatGPT账号的Codex额度\n实际模型权限需调用验证。', '/m 查看模型　/r 查看推理'));
+          return answer(res, body, notice('设置成功', `模型：${model}\n推理：${model.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条消息\n切换：不调用模型', model.includes('/') ? '计费：所选提供商 API\n能力：当前仅聊天' : '额度：ChatGPT账号的Codex额度\n实际模型权限需调用验证。', '指令：/m\n说明：查看模型选项\n\n指令：/r\n说明：查看推理档位'));
         }
         if (command.type === 'status') {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
-          return answer(res, body, notice('运行状态', `服务器接收端在线\n接收状态：✓ 在线\n服务器执行进程：${remote ? '✓ 在线' : '✗ 未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '✓ 已登录（额度需调用验证）' : remote?.authenticated === false ? '✗ 未登录' : '尚未验证'}\n电脑执行端：${computer ? '✓ 在线' : '✗ 离线'}`, currentSettings(), `当前路径：微信 → 服务器 → ${selection.target === 'computer' ? '电脑' : '服务器Codex'}`, '/h 帮助　/m 模型　/r 推理　/t 执行端'));
+          return answer(res, body, notice('运行状态', `服务器接收端在线\n接收状态：✓ 在线\n服务器执行进程：${remote ? '✓ 在线' : '✗ 未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '✓ 已登录（额度需调用验证）' : remote?.authenticated === false ? '✗ 未登录' : '尚未验证'}\n电脑执行端：${computer ? '✓ 在线' : '✗ 离线'}`, currentSettings(), `当前路径：微信 → 服务器 → ${selection.target === 'computer' ? '电脑' : '服务器Codex'}`, '指令：/h\n说明：查看全部帮助\n\n指令：/m\n说明：查看模型选项\n\n指令：/r\n说明：查看推理档位\n\n指令：/t\n说明：查看默认执行端'));
         }
         return answer(res, body, help(command.type));
       }
