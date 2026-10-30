@@ -56,7 +56,7 @@ export function textTable(headers, rows) {
   const width = Math.max(...data.map(row => displayWidth(row[0])));
   // Menu labels are Chinese: pad with ideographic spaces, not ASCII spaces.
   // Two ASCII spaces need not have the same rendered width as one CJK glyph.
-  return data.map(row => row[0] + '\u3000'.repeat(Math.ceil((width - displayWidth(row[0])) / 2) + 1) + row[1]).join('\n');
+  return data.map(row => row[0] + '\u3000'.repeat(Math.ceil((width - displayWidth(row[0])) / 2) + 2) + row[1]).join('\n');
 }
 
 export const compactRows = rows => textTable(null, rows);
