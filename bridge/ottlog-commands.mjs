@@ -78,7 +78,7 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
             await client.write('todos', raw, { ...data, tasks: [task, ...data.tasks] }); await number([task]);
             return { handled: true, text: notice('任务已添加', line(task), '优先级：高 · 重要且紧急') };
           }
-          return { handled: true, text: notice('任务列表', ...todoQuadrants.map(q => `【${q.title}】\n说明：${q.caption}\n\n${tasks.filter(t => t.important === q.important && t.urgent === q.urgent).map(taskCard).join('\n\n') || '暂无任务'}`)) };
+          return { handled: true, text: notice('任务列表', ...todoQuadrants.map(q => `【${q.title}】\n\n${tasks.filter(t => t.important === q.important && t.urgent === q.urgent).map(taskCard).join('\n\n') || '暂无任务'}`)) };
         }
         if (command.type === 'done') {
           if (!command.value) throw new Error('用法：/done <任务编号或完整任务名>');
