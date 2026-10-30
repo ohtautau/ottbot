@@ -106,22 +106,22 @@ export async function createHub(config) {
           const options = await reasoningOptions(config, selection.model);
           const effort = resolveEffort(command.value);
           if (!command.value || !effort || !options.includes(effort)) {
-            return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '/r 查看可用档位') : await reasoningHelp(config, selection.model, selection.effort));
+            return answer(res, body, command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '用法：/r 查看可用档位') : await reasoningHelp(config, selection.model, selection.effort));
           }
           await persist({ ...selection, effort });
           return answer(res, body, settingNotice('推理', effortShort(effort)));
         }
         if (command.type === 'model' && command.value) {
           const model = resolveModel(command.value);
-          if (!model) return answer(res, body, notice('指令错误', '模型名称无效，原设置保持。', '/m 查看模型选项'));
+          if (!model) return answer(res, body, notice('指令错误', '模型名称无效，原设置保持。', '用法：/m 查看模型选项'));
           try { await apiConfig(config, model); }
           catch (error) { return answer(res, body, notice('配置未完成', error.message)); }
           const options = await reasoningOptions(config, model);
           const effort = !options.length || options.includes(selection.effort) ? selection.effort : 'auto';
           await persist({ ...selection, model, effort });
           return answer(res, body, settingNotice('模型', modelLabel(model), model.includes('/')
-            ? '下一条消息生效；按所选 API 计费，当前仅聊天。'
-            : `推理：${effortShort(effort)}\n下一条消息生效，使用账号的Codex额度。`));
+            ? '生效：下一条消息\n计费：所选 API，当前仅聊天。'
+            : `推理：${effortShort(effort)}\n生效：下一条消息\n额度：ChatGPT账号的Codex额度。`));
         }
         if (command.type === 'status') {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);

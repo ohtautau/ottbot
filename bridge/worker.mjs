@@ -239,18 +239,18 @@ export async function createWorker(config, execute = runCodex) {
           if (command.value && chosen && options.includes(chosen)) {
             await persist(selected, chosen);
             answer = settingNotice('推理', effortShort(effort));
-          } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '/r 查看可用档位') : await reasoningHelp(config, selected, effort);
+          } else answer = command.value && options.length ? notice('指令错误', '该模型不支持这个推理档位，原设置保持。', '用法：/r 查看可用档位') : await reasoningHelp(config, selected, effort);
         } else if (command.type === 'model' && command.value) {
           const chosen = resolveModel(command.value);
-          if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', '/m 查看模型选项');
+          if (!chosen) answer = notice('指令错误', '没有这个模型，原设置保持。', '用法：/m 查看模型选项');
           else {
             await apiConfig(config, chosen);
             const options = await reasoningOptions(config, chosen);
             const nextEffort = !options.length || options.includes(effort) ? effort : 'auto';
             await persist(chosen, nextEffort);
             answer = settingNotice('模型', modelLabel(selected), chosen.includes('/')
-              ? '下一条消息生效；按所选 API 计费，当前仅聊天。'
-              : `推理：${effortShort(effort)}\n下一条消息生效，使用账号的Codex额度。`);
+              ? '生效：下一条消息\n计费：所选 API，当前仅聊天。'
+              : `推理：${effortShort(effort)}\n生效：下一条消息\n额度：ChatGPT账号的Codex额度。`);
           }
         } else answer = request.command.type === 'status'
           ? notice('执行端', compactRows([['连接', '✓ 在线'], ['模型', modelLabel(selected)], ['推理', selected.includes('/') ? 'API默认' : effortShort(effort)], ['权限', config.sandbox || 'read-only']]), commandItem('/h', '帮助；额度需实际调用验证。'))
