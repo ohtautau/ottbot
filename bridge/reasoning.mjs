@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { MODELS } from './models.mjs';
-import { notice, compactRows } from './commands.mjs';
+import { notice, compactRows, commandItem } from './commands.mjs';
 
 const LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const NUMBERED = Object.freeze({ '0': 'auto', '1': 'low', '2': 'medium', '3': 'high', '4': 'xhigh', '5': 'max', '6': 'ultra' });
@@ -39,7 +39,7 @@ export async function reasoningOptions(config, model) {
 }
 
 export async function reasoningHelp(config, model, effort) {
-  if (model.includes('/')) return notice('推理', '当前为 API 通道，暂不支持修改推理参数。', '/m 2 切回 Codex');
+  if (model.includes('/')) return notice('推理', '当前为 API 通道，暂不支持修改推理参数。', commandItem('/m 2', '切回 Codex'));
   const options = await reasoningOptions(config, model);
   const menu = compactRows(options.map(level => [
     '/r ' + (Object.keys(NUMBERED).find(number => NUMBERED[number] === level) ?? level),

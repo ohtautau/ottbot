@@ -53,7 +53,7 @@ export function textTable(headers, rows) {
   const data = [...(headers ? [headers] : []), ...rows].map(row => row.map(clean));
   if (!data.length) return '';
   const width = Math.max(...data.map(row => displayWidth(row[0])));
-  return data.map(row => row[0] + ' '.repeat(width - displayWidth(row[0]) + 3) + row[1]).join('\n');
+  return data.map(row => row[0] + ' '.repeat(width - displayWidth(row[0]) + 3) + '：' + row[1]).join('\n');
 }
 
 export const compactRows = rows => textTable(null, rows);
@@ -83,7 +83,7 @@ export function statusText(state) {
     ['服务器', state.serverOnline ? '✓ 在线' : '✗ 离线'],
     ['Codex', login],
     ['电脑', state.computerOnline ? '✓ 在线' : '✗ 离线'],
-  ]), `默认：${state.target === 'computer' ? '电脑' : '服务器'}\n模型：${modelLabel(state.model)}\n推理：${state.effortText}`, '/h 帮助');
+  ]), `默认：${state.target === 'computer' ? '电脑' : '服务器'}\n模型：${modelLabel(state.model)}\n推理：${state.effortText}`, commandItem('/h', '帮助'));
 }
 
 export function helpText(topic = '', state = {}, detailed = false) {
@@ -96,7 +96,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
       '同一选择可用：/m 2、/m sol、/模型 2',
       '其他 Codex 模型：\n/m 完整模型ID\n\n已配置的 API，例如：\n/m qwen/qwen-plus',
       'API 需先配置 Key，按提供商计费；不自动回退。')
-      : notice('模型', current, menu, '发送 /m 2 选择 Sol\n英文参数与 API：/h m');
+      : notice('模型', current, menu, '示例：/m 2 选择 Sol\n英文参数与 API：/h m');
   }
   if (topic === 'reasoning') return notice('推理用法', compactRows([
     ['/r', '查看本模型可用档位'], ['/r 2', '中等推理'], ['/r auto', '模型默认'],

@@ -24,8 +24,8 @@ test('shared command contract: aliases, boundaries, task preservation and help',
   assert.match(helpText('reasoning'), /\/r 2/);
   assert.match(helpText(), /中文 \/ 英文 \/ 缩写/);
   const menu = helpText('model', { model: MODELS.sol });
-  assert.match(menu, /\/m 2 +Sol +← 当前/);
-  assert.match(menu, /\/m 3 +Terra/);
+  assert.match(menu, /\/m 2 +：Sol +← 当前/);
+  assert.match(menu, /\/m 3 +：Terra/);
   assert.ok(menu.split('\n').length <= 14);
   assert.doesNotMatch(menu, /────────|│|项目 +内容|指令 +说明/);
 });
@@ -110,7 +110,7 @@ test('HTTP auth, model control without inference, persistence, SSE and backend f
     assert.equal((await (await fetch(url + '/health', { headers })).json()).reasoningEffort, 'low');
     assert.equal((await (await chat('/模型 luna')).json()).settings.model, MODELS.luna);
     const menu = (await (await chat('/推理')).json()).choices[0].message.content;
-    assert.match(menu, /\/r 2 +中/);
+    assert.match(menu, /\/r 2 +：中/);
     assert.doesNotMatch(menu, /\/r 6/);
     assert.match((await (await chat('/推理 6')).json()).choices[0].message.content, /不支持/);
     assert.equal((await (await chat('/推理 2')).json()).settings.reasoningEffort, 'medium');

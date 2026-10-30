@@ -11,7 +11,7 @@ import { MODELS, resolveModel, apiConfig, runApi } from './models.mjs';
 import { resolveEffort, reasoningOptions, reasoningHelp, effortShort } from './reasoning.mjs';
 
 export { MODELS } from './models.mjs';
-import { parseCommand, helpText, notice, compactRows, modelLabel, settingNotice } from './commands.mjs';
+import { parseCommand, helpText, notice, compactRows, modelLabel, settingNotice, commandItem } from './commands.mjs';
 export { parseCommand } from './commands.mjs';
 const LIMIT = 24 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
@@ -253,7 +253,7 @@ export async function createWorker(config, execute = runCodex) {
               : `推理：${effortShort(effort)}\n下一条消息生效，使用账号的Codex额度。`);
           }
         } else answer = request.command.type === 'status'
-          ? notice('执行端', compactRows([['连接', '✓ 在线'], ['模型', modelLabel(selected)], ['推理', selected.includes('/') ? 'API默认' : effortShort(effort)], ['权限', config.sandbox || 'read-only']]), '/h 帮助；额度需实际调用验证。')
+          ? notice('执行端', compactRows([['连接', '✓ 在线'], ['模型', modelLabel(selected)], ['推理', selected.includes('/') ? 'API默认' : effortShort(effort)], ['权限', config.sandbox || 'read-only']]), commandItem('/h', '帮助；额度需实际调用验证。'))
           : help(command.type);
       } else answer = await execute({ ...config, reasoningEffort: effort }, request, selected, controller.signal);
       if (res.destroyed) return;
