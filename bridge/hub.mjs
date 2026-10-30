@@ -119,11 +119,11 @@ export async function createHub(config) {
           const options = await reasoningOptions(config, model);
           const effort = !options.length || options.includes(selection.effort) ? selection.effort : 'auto';
           await persist({ ...selection, model, effort });
-          return answer(res, body, `【设置成功】\n\n当前模型：${model}\n下一条消息生效 · 切换不调用模型\n${model.includes('/') ? '\n这是独立API通道，按该提供商计费，当前仅聊天。' : `\n推理强度：${effort}；发送 /推理 查看。\n使用ChatGPT账号的Codex额度；实际模型权限需调用验证。`}`);
+          return answer(res, body, notice('设置成功', `模型：${model}\n推理：${model.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条消息\n切换：不调用模型', model.includes('/') ? '计费：所选提供商 API\n能力：当前仅聊天' : '额度：ChatGPT账号的Codex额度\n实际模型权限需调用验证。', '/m 查看模型　/r 查看推理'));
         }
         if (command.type === 'status') {
           const [remote, computer] = await Promise.all([health('server'), health('computer')]);
-          return answer(res, body, notice('运行状态', `服务器接收端在线\n服务器执行进程：${remote ? '在线' : '未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '已登录（额度需调用验证）' : remote?.authenticated === false ? '未登录' : '尚未验证'}\n电脑执行端：${computer ? '在线' : '离线'}`, currentSettings(), '/h 帮助　/m 模型　/r 推理　/t 执行端'));
+          return answer(res, body, notice('运行状态', `服务器接收端在线\n接收状态：✓ 在线\n服务器执行进程：${remote ? '✓ 在线' : '✗ 未连接'}\n服务器Codex登录：${remote?.authenticated === true ? '✓ 已登录（额度需调用验证）' : remote?.authenticated === false ? '✗ 未登录' : '尚未验证'}\n电脑执行端：${computer ? '✓ 在线' : '✗ 离线'}`, currentSettings(), `当前路径：微信 → 服务器 → ${selection.target === 'computer' ? '电脑' : '服务器Codex'}`, '/h 帮助　/m 模型　/r 推理　/t 执行端'));
         }
         return answer(res, body, help(command.type));
       }

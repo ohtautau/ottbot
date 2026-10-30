@@ -42,7 +42,7 @@ export function parseCommand(text) {
 }
 
 export function notice(title, ...sections) {
-  return `【${title}】\n\n${sections.filter(Boolean).join('\n\n')}`;
+  return `【${title}】\n\n${sections.filter(Boolean).join('\n\n────────\n\n')}`;
 }
 
 export function helpText(topic = '', state = '') {
@@ -57,7 +57,7 @@ export function helpText(topic = '', state = '') {
   if (topic === 'server' || topic === 'computer') topic = 'route';
   if (entries[topic]) return notice('指令帮助', ...entries[topic], state);
   return notice('指令帮助', state,
-    '常用指令（中文 / 英文 / 缩写）\n帮助 / help / h\n状态 / status / st\n模型 / model / m\n推理 / reasoning / r\n执行 / target / t\n服务器 / server / srv\n电脑 / computer / pc\n清空 / clear / cl',
+    '常用指令（中文 / 英文 / 缩写）\n1. 帮助 / help / h\n2. 状态 / status / st\n3. 模型 / model / m\n4. 推理 / reasoning / r\n5. 执行 / target / t\n6. 服务器 / server / srv\n7. 电脑 / computer / pc\n8. 清空 / clear / cl',
     '快速示例\n/m sol　切换模型\n/r 2　推理设为中等\n/t pc　默认在电脑执行\n/srv 任务内容　仅本次在服务器执行\n/h r　查看推理帮助',
     '规则\n指令以 / 开头，命令和参数用空格分隔。\n英文命令忽略大小写，也支持全角 ／。\n未知或错误指令只返回提示，不交给 AI。\n裸数字和正文中的 / 保持普通聊天。\n设置指令不调用模型，保存后下一条任务生效。');
 }

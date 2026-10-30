@@ -248,7 +248,7 @@ export async function createWorker(config, execute = runCodex) {
             const options = await reasoningOptions(config, chosen);
             const nextEffort = !options.length || options.includes(effort) ? effort : 'auto';
             await persist(chosen, nextEffort);
-            answer = `已切换到 ${selected}。下一条普通消息开始使用此模型；切换本身不调用模型。\n推理强度：${chosen.includes('/') ? 'API默认' : effort}；发送 /推理 查看。`;
+            answer = notice('设置成功', `模型：${selected}\n推理：${chosen.includes('/') ? 'API默认' : effortLabel(effort)}`, '生效：下一条任务\n切换：不调用模型', '/m 查看模型　/r 查看推理');
           }
         } else answer = request.command.type === 'status'
           ? `转接已连接，Codex 执行端可接收任务。\n当前模型：${selected}\n推理强度：${selected.includes('/') ? 'API默认' : effort}\n认证：每次模型调用前检查 ChatGPT 登录\n执行权限：${config.sandbox || 'read-only'}；博客授权接口尚未接入。\n本状态检查不验证模型额度。`

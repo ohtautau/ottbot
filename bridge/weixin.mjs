@@ -165,7 +165,7 @@ export async function monitor(configPath) {
           const target = response.headers.get('x-ottbot-target');
           const text = response.ok ? result.choices?.[0]?.message?.content : result.error?.message;
           if (!text) throw new Error('执行端未返回明确结果。');
-          await send(message, (target ? `【${target === 'computer' ? '电脑' : '服务器'}】\n` : '') + text);
+          await send(message, (target ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n` : '') + text);
           if (response.ok && target) histories.set(`${target}:${response.headers.get('x-ottbot-model')}`, [...history,
             { role: 'user', content: plainText.slice(0, 6000) || '（发送了照片，历史中不保留原图片）' },
             { role: 'assistant', content: text.slice(0, 6000) },
