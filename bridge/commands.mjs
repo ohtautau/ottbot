@@ -129,7 +129,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
   if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '说明：连接正常不代表模型额度充足。');
   if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留：微信聊天记录和博客数据。');
   if (topic === 'api') return notice('API 配置', commandRows([
-    ['/api add', '新增或修改提供商'], ['/api list', '查看已配置提供商'], ['/api cancel', '取消配置'],
+    ['/api add', '新增或修改提供商'], ['/api list', '查看已配置提供商'], ['/api delete <模型编号>', '确认后删除模型'], ['/api cancel', '取消配置'],
   ]), '说明：仅在绑定账号的微信私聊中配置。按提示填写提供商、接口、Key、模型；不回显 Key，不自动调用或切换。');
   if (topic === 'aliases') return notice('指令别名', commandRows(COMMANDS.map(item => {
     return [item.aliases.filter(alias => /^[a-z?]+$/.test(alias)).map(alias => '/' + alias).join('  '), item.aliases.filter(alias => /[\u4e00-\u9fff]/.test(alias)).join('、')];

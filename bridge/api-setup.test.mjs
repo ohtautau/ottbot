@@ -75,6 +75,65 @@ test('empty provider placeholders are hidden; assigned API model numbers survive
   assert.equal(await resolveConfiguredModel(paths, 'qwen'), 'qwen/qwen-new');
 }));
 
+test('single API deletion requires confirmation, keeps other numbers and blocks deleted model calls', async () => fixture(async paths => {
+  const secret = 'test-delete-private-not-real';
+  await writeFile(paths.providersFile, JSON.stringify({ qwen: { enabled: true, apiKey: secret, endpoint: 'https://api.example.com/v1/chat/completions', models: ['qwen-plus', 'qwen-turbo'], defaultModel: 'qwen-plus' } }));
+  const setup = await createApiSetup(paths);
+  const initial = await readFile(paths.providersFile, 'utf8');
+  for (const command of ['/api delete', '/api delete openai', '/api delete 2', '/api delete 999']) {
+    assert.equal((await setup.handle(command)).handled, true);
+    assert.equal(await readFile(paths.providersFile, 'utf8'), initial);
+    await assert.rejects(access(paths.pendingFile));
+  }
+  const confirmation = (await setup.handle('/api delete 5')).text;
+  assert.match(confirmation, /确认删除 API/);
+  assert.ok(!confirmation.includes(secret));
+  assert.equal(await readFile(paths.providersFile, 'utf8'), initial);
+  assert.ok(!(await readFile(paths.pendingFile, 'utf8')).includes(secret));
+  await setup.handle('/api cancel');
+  assert.equal(await readFile(paths.providersFile, 'utf8'), initial);
+  await setup.handle('/接口 删除 5');
+  assert.equal((await setup.handle('/m 2')).handled, true);
+  assert.match((await setup.handle('确认')).text, /API 已删除/);
+  const rows = await configuredApiModels(paths);
+  assert.deepEqual(rows.map(row => [row.number, row.id]), [[6, 'qwen-turbo']]);
+  assert.equal(await resolveConfiguredModel(paths, '5'), null);
+  let calls = 0;
+  await assert.rejects(runApi(paths, { text: 'hello', history: [], images: [] }, 'qwen/qwen-plus', undefined, async () => { calls++; }), /已删除/);
+  assert.equal(calls, 0);
+  let saved = JSON.parse(await readFile(paths.providersFile, 'utf8'));
+  assert.equal(saved.qwen.defaultModel, 'qwen-turbo');
+  assert.equal(saved.qwen.apiKey, secret);
+  await setup.handle('/ap rm 6');
+  await setup.handle('/api save');
+  assert.deepEqual(await configuredApiModels(paths), []);
+  saved = JSON.parse(await readFile(paths.providersFile, 'utf8'));
+  assert.equal(saved.qwen.enabled, false);
+  assert.equal(saved.qwen.apiKey, secret);
+  await assert.rejects(access(paths.pendingFile));
+  for (const input of ['/api add', 'qwen', 'https://api.example.com/v1/chat/completions', secret, 'qwen-plus', '确认']) await setup.handle(input);
+  assert.equal(await resolveConfiguredModel(paths, '5'), 'qwen/qwen-plus');
+  assert.ok(!JSON.parse(await readFile(paths.providersFile, 'utf8')).qwen.deletedModels.includes('qwen-plus'));
+}));
+
+test('pending deletion cannot replace a setup draft or survive expiry and restart as confirmation', async () => fixture(async paths => {
+  await writeFile(paths.providersFile, JSON.stringify({ qwen: { enabled: true, apiKey: 'test-private-not-real', defaultModel: 'qwen-plus' } }));
+  let time = 1000;
+  const setup = await createApiSetup({ ...paths, now: () => time });
+  await setup.handle('/api add');
+  assert.match((await setup.handle('/api delete 5')).text, /先 \/api cancel/);
+  await setup.handle('/api cancel');
+  await setup.handle('/api delete 5');
+  time += 11 * 60 * 1000;
+  assert.match((await setup.handle('确认')).text, /已中断/);
+  assert.equal((await configuredApiModels(paths)).length, 1);
+  const recovered = await createApiSetup(paths);
+  assert.match((await recovered.handle('确认')).text, /已中断/);
+  await recovered.handle('/api cancel');
+  assert.equal((await recovered.handle('hello')).handled, false);
+  assert.equal((await configuredApiModels(paths)).length, 1);
+}));
+
 test('cancel, expiry and restart cannot forward pending configuration values as chat', async () => fixture(async paths => {
   let time = 1000;
   const setup = await createApiSetup({ ...paths, now: () => time });

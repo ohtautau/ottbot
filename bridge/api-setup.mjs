@@ -78,26 +78,58 @@ export async function createApiSetup({ providersFile, pendingFile, now = Date.no
         draft = { stage: 0, values: {}, expires: now() + 10 * 60 * 1000 };
         return result(prompt());
       }
+      if (isApi && ['delete', 'del', 'remove', 'rm', '删除', '删'].includes(action)) {
+        if (draft || blocked) return result(notice('API 配置中', '说明：请先 /api cancel 退出当前流程，再删除。'));
+        if (parts.length !== 2 || !/^[1-9][0-9]*$/.test(parts[1])) return result(notice('删除 API', '用法：/api delete <模型编号>\n示例：/api delete 5'));
+        try {
+          const providers = await readProviders(providersFile);
+          const choice = assignApiModelNumbers(providers).find(item => item.number === Number(parts[1]));
+          if (!choice) return result(notice('未找到', '说明：只能删除已配置的 API 模型；发送 /m 查看编号。'));
+          const { provider, id: model } = choice;
+          await atomicPrivate(pendingFile, { active: true });
+          blocked = true;
+          draft = { kind: 'delete', stage: 4, values: { provider, model }, expires: now() + 10 * 60 * 1000 };
+          return result(notice('确认删除 API', `编号：${choice.number}\n提供商：${provider}\n模型：${model}`,
+            '删除：发送“确认”或 /api save\n取消：/api cancel'));
+        } catch { return result(notice('删除失败', '说明：无法准备删除，原配置保持。')); }
+      }
       if (isApi && (!action || ['list', '列表'].includes(action))) {
         try {
           const providers = await readProviders(providersFile);
           const rows = Object.entries(providers).filter(([id, item]) => PROVIDER.test(id) && !RESERVED.includes(id) && typeof item?.apiKey === 'string' && item.apiKey.length >= 10 && typeof item.defaultModel === 'string' && MODEL.test(item.defaultModel)).map(([id, item]) => [id, `${item.enabled ? '已启用' : '未启用'} · ${item.defaultModel} · Key已填写`]);
-          return result(notice('API 列表', rows.length ? compactRows(rows) : '当前：尚无已配置提供商。', '配置：/api add\n模型编号：/m'));
+          return result(notice('API 列表', rows.length ? compactRows(rows) : '当前：尚无已配置提供商。', '配置：/api add\n删除：/api delete <模型编号>\n模型编号：/m'));
         } catch { return result(notice('配置失败', '说明：无法读取配置，原配置保持。')); }
       }
       if (draft && now() > draft.expires) draft = null;
       if (!draft) {
         if (blocked) return result(notice('配置已中断', '说明：本条内容未交给模型。配置可能超时或服务已重启。', '重新开始：/api add\n退出配置：/api cancel'));
-        return result(notice('API 配置', compactRows([['新增或修改', '/api add'], ['查看提供商', '/api'], ['取消配置', '/api cancel']])));
+        return result(notice('API 配置', compactRows([['新增或修改', '/api add'], ['查看提供商', '/api'], ['删除模型', '/api delete <模型编号>'], ['取消配置', '/api cancel']])));
       }
       const confirm = draft.stage === 4 && ((!isApi && ['确认', '保存'].includes(text.trim())) || (isApi && ['save', 'confirm', '保存', '确认'].includes(action)));
       if (confirm) {
+        if (draft.kind === 'delete') {
+          const { provider, model } = draft.values;
+          try {
+            const providers = await readProviders(providersFile);
+            const previous = Object.hasOwn(providers, provider) ? providers[provider] : null;
+            if (!previous || typeof previous !== 'object') throw new Error();
+            const ids = [...new Set([...(Array.isArray(previous.models) ? previous.models : []), previous.defaultModel])].filter(id => typeof id === 'string' && MODEL.test(id));
+            if (!ids.includes(model)) throw new Error();
+            const remaining = ids.filter(id => id !== model);
+            const deletedModels = [...new Set([...(Array.isArray(previous.deletedModels) ? previous.deletedModels : []), model])];
+            providers[provider] = { ...previous, models: remaining, deletedModels, defaultModel: remaining.includes(previous.defaultModel) ? previous.defaultModel : (remaining[0] || ''), enabled: remaining.length ? previous.enabled : false };
+            await atomicPrivate(providersFile, providers);
+            await finish();
+            return result(notice('API 已删除', `提供商：${provider}\n模型：${model}`, '模型菜单：/m'));
+          } catch { return result(notice('删除失败', '说明：请重试确认或 /api cancel。')); }
+        }
         const { provider, endpoint, apiKey, model } = draft.values;
         try {
           const providers = await readProviders(providersFile);
           const previous = Object.hasOwn(providers, provider) ? providers[provider] : {};
           const ids = [...new Set([...(Array.isArray(previous.models) ? previous.models.filter(id => typeof id === 'string' && MODEL.test(id)) : []), ...(typeof previous.defaultModel === 'string' && MODEL.test(previous.defaultModel) ? [previous.defaultModel] : []), model])];
           providers[provider] = { ...previous, enabled: true, endpoint, apiKey, defaultModel: model, models: ids, images: previous.images === true, maxTokens: previous.maxTokens || 2048 };
+          if (Array.isArray(previous.deletedModels)) providers[provider].deletedModels = previous.deletedModels.filter(id => id !== model);
           const choices = assignApiModelNumbers(providers);
           const number = choices.find(item => item.provider === provider && item.id === model).number;
           await atomicPrivate(providersFile, providers);

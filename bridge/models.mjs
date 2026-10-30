@@ -65,6 +65,9 @@ export async function apiConfig(config, model) {
     catch { throw new Error('API 提供商配置不可用，请在服务器私有配置中设置；未调用其他模型。'); }
   }
   const settings = Object.hasOwn(providers, provider) ? providers[provider] : null;
+  if (Array.isArray(settings?.deletedModels) && settings.deletedModels.includes(id)) {
+    throw new Error('该 API 模型已删除；发送 /m 选择其他模型，或 /api add 重新配置。');
+  }
   if (!settings?.enabled || typeof settings.apiKey !== 'string' || settings.apiKey.length < 10) {
     throw new Error(`尚未配置 ${provider} 的 API Key，当前模型未改变。请先配置服务器私有 providers.json。`);
   }
