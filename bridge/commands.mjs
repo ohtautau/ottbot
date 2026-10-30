@@ -37,7 +37,8 @@ export function parseCommand(text) {
   if (argument && /\s/.test(argument)) return { type: 'error', message: '该设置指令只接受一个参数。示例：/m sol、/r 2、/t pc。' };
   if (type === 'help' && argument) {
     const name = argument.toLowerCase().replace(/^[\/／]/, '');
-    const topic = ['a', 'alias', 'aliases', '别名'].includes(name) ? 'aliases' : lookup.get(name);
+    const topic = ['a', 'alias', 'aliases', '别名'].includes(name) ? 'aliases'
+      : ['syntax', 'notation', '语法', '约定'].includes(name) ? 'syntax' : lookup.get(name);
     return topic ? { type: 'help', value: topic } : { type: 'error', message: '未找到这个帮助主题。发送 /h 查看全部指令。' };
   }
   if (type === 'reasoning' || type === 'target' || /^(?:luna|sol|terra|astra|codex\/(?:luna|sol|terra|astra))$/i.test(argument)) argument = argument.toLowerCase();
@@ -90,22 +91,27 @@ export function helpText(topic = '', state = {}, detailed = false) {
   const model = state.model || '';
   const current = model ? `当前：${modelLabel(model)}` : '';
   const choices = Object.values(MODEL_CHOICES).map(alias => MODELS[alias]);
+  if (topic === 'syntax') return notice('用法约定', compactRows([
+    ['<参数>', '必填'], ['[参数]', '可选'], ['选项A|选项B', '二选一'],
+  ]), compactRows([
+    ['/srv <任务>', '必须填写任务'], ['/h [主题]', '省略主题查看总帮助'], ['/t [服务器|电脑]', '填写时二选一，省略则查看'],
+  ]), '说明：括号不用输入；| 两侧只选一个。\n示例：/srv 查看目录、/h、/h m、/t 电脑');
   if (topic === 'model') {
     const menu = compactRows(choices.map((id, index) => [`/m ${index + 1}`, modelLabel(id) + (id === model ? '  ← 当前' : '')]));
     return detailed ? notice('模型用法', current, menu,
-      '同一选择可用：/m 2、/m sol、/模型 2',
-      '其他 Codex 模型：\n/m 完整模型ID\n\n已配置的 API，例如：\n/m qwen/qwen-plus',
+      '用法：/m [模型]\n说明：省略参数查看，填写参数切换。\n同一选择可用：/m 2、/m sol、/模型 2',
+      '其他 Codex 模型：/m <模型ID>\n已配置的 API：/m <提供商>/<模型ID>\n示例：/m qwen/qwen-plus',
       '说明：API 需先配置 Key，按提供商计费；不自动回退。')
       : notice('模型', current, menu, '示例：/m 2 选择 Sol\n英文参数与 API：/h m');
   }
   if (topic === 'reasoning') return notice('推理用法', compactRows([
     ['/r', '查看本模型可用档位'], ['/r 2', '中等推理'], ['/r auto', '模型默认'],
-  ]), '参数：支持中文、英文，例如 /推理 中、/r medium。\n编号：固定；不支持的档位不会保存。\n限制：API 通道的推理参数暂未接入。');
+  ]), '用法：/r [档位]\n参数：支持中文、英文，例如 /推理 中、/r medium。\n编号：固定；不支持的档位不会保存。\n限制：API 通道的推理参数暂未接入。');
   if (topic === 'target') return notice('默认执行端', state.target ? `当前：${state.target === 'computer' ? '电脑' : '服务器'}` : '',
     compactRows([['/t srv', '服务器' + (state.target === 'server' ? '  ← 当前' : '')], ['/t pc', '电脑' + (state.target === 'computer' ? '  ← 当前' : '')]]),
-    detailed ? '别名：/执行 服务器、/t 电脑。\n说明：只影响后续任务；电脑离线不转交其他机器。\n单次指定：/srv 任务 或 /pc 任务' : '单次指定：/srv 任务 或 /pc 任务\n说明：电脑离线不转交其他机器。');
+    detailed ? '用法：/t [服务器|电脑]\n说明：省略参数查看，填写时二选一。\n别名：/执行 服务器、/t 电脑。\n说明：只影响后续任务；电脑离线不转交其他机器。\n单次指定：/srv <任务> 或 /pc <任务>' : '单次指定：/srv <任务> 或 /pc <任务>\n说明：电脑离线不转交其他机器。');
   if (['route', 'server', 'computer'].includes(topic)) return notice('单次执行', compactRows([
-    ['/srv 任务', '交给服务器'], ['/pc 任务', '交给电脑'],
+    ['/srv <任务>', '交给服务器'], ['/pc <任务>', '交给电脑'],
   ]), '说明：可写多行任务；不改变默认执行端。');
   if (topic === 'status') return notice('状态用法', commandItem('/st', '查看连接与当前设置'), '说明：连接正常不代表模型额度充足。');
   if (topic === 'clear') return notice('清空用法', commandItem('/cl', '清空微信短期上下文'), '保留：微信聊天记录和博客数据。');
@@ -114,7 +120,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
     return [canonical, item.aliases.map(alias => '/' + alias).filter(alias => alias !== canonical).join('  ')];
   })), '说明：每行写法等价；英文命令忽略大小写。');
   return notice('帮助', compactRows([
-    ['/st', '查看状态'], ['/m', '选择模型'], ['/r', '调整推理'], ['/t', '默认执行端'],
-    ['/srv', '服务器任务'], ['/pc', '电脑任务'], ['/cl', '清空上下文'],
-  ]), '示例：/m 2、/r 2、/t pc\n详细：/h m、/h r、/h t\n中文 / 英文 / 缩写：/h a');
+    ['/st', '查看状态'], ['/m [模型]', '查看或切换模型'], ['/r [档位]', '查看或调整推理'], ['/t [执行端]', '查看或设置默认端'],
+    ['/srv <任务>', '服务器任务'], ['/pc <任务>', '电脑任务'], ['/cl', '清空上下文'],
+  ]), '示例：/m 2、/r 2、/t pc\n详细：/h m、/h r、/h t\n中文 / 英文 / 缩写：/h a\n用法约定：/h 语法');
 }

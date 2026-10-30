@@ -17,12 +17,17 @@ test('shared command contract: aliases, boundaries, task preservation and help',
   assert.deepEqual(parseUnified('/SRV Keep Case\n/m sol'), { type: 'route', target: 'server', text: 'Keep Case\n/m sol' });
   assert.deepEqual(parseUnified('/h r'), { type: 'help', value: 'reasoning' });
   assert.deepEqual(parseUnified('/h a'), { type: 'help', value: 'aliases' });
+  assert.deepEqual(parseUnified('/h 语法'), { type: 'help', value: 'syntax' });
+  assert.deepEqual(parseUnified('/help syntax'), { type: 'help', value: 'syntax' });
   assert.equal(resolveTarget('PC'), 'computer');
   assert.equal(resolveTarget('srv'), 'server');
   for (const text of ['2', '解释 /r 2', '//m sol', 'https://example.com']) assert.equal(parseUnified(text), null);
   for (const text of ['/unknown', '/st extra', '/cl yes', '/r 2 extra']) assert.equal(parseUnified(text).type, 'error');
   assert.match(helpText('reasoning'), /\/r 2/);
   assert.match(helpText('target'), /说明：电脑离线不转交其他机器。/);
+  assert.match(helpText('syntax'), /<参数> +必填/);
+  assert.match(helpText('syntax'), /\[参数\] +可选/);
+  assert.match(helpText('syntax'), /选项A\|选项B +二选一/);
   assert.match(helpText(), /中文 \/ 英文 \/ 缩写/);
   const menu = helpText('model', { model: MODELS.sol });
   assert.match(menu, /\/m 2 +Sol +← 当前/);
