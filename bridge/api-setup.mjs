@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, rename, rm, access } from 'node:fs/promises
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { notice, compactRows, parseCommand } from './commands.mjs';
-import { API_MODEL_ID as MODEL } from './models.mjs';
+import { API_MODEL_ID as MODEL, assignApiModelNumbers } from './models.mjs';
 
 const PROVIDER = /^[a-z][a-z0-9_-]{0,31}$/;
 const RESERVED = ['codex', 'constructor', 'prototype', '__proto__'];
@@ -45,6 +45,10 @@ export function validateEndpoint(value) {
 }
 
 export async function createApiSetup({ providersFile, pendingFile, now = Date.now }) {
+  const existing = await readProviders(providersFile);
+  const prior = JSON.stringify(existing);
+  assignApiModelNumbers(existing);
+  if (JSON.stringify(existing) !== prior) await atomicPrivate(providersFile, existing);
   let draft = null;
   let blocked = false;
   try { await access(pendingFile); blocked = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -74,17 +78,17 @@ export async function createApiSetup({ providersFile, pendingFile, now = Date.no
         draft = { stage: 0, values: {}, expires: now() + 10 * 60 * 1000 };
         return result(prompt());
       }
-      if (isApi && ['list', '列表'].includes(action)) {
+      if (isApi && (!action || ['list', '列表'].includes(action))) {
         try {
           const providers = await readProviders(providersFile);
-          const rows = Object.entries(providers).filter(([id]) => PROVIDER.test(id) && !RESERVED.includes(id)).map(([id, item]) => [id, `${item.enabled ? '已启用' : '未启用'} · ${typeof item.defaultModel === 'string' && MODEL.test(item.defaultModel) ? item.defaultModel : '模型未设'} · Key${item.apiKey ? '已填写' : '未填写'}`]);
-          return result(notice('API 列表', rows.length ? compactRows(rows) : '当前：尚无已配置提供商。', '配置：/api add\n切换：/m 提供商/模型ID'));
+          const rows = Object.entries(providers).filter(([id, item]) => PROVIDER.test(id) && !RESERVED.includes(id) && typeof item?.apiKey === 'string' && item.apiKey.length >= 10 && typeof item.defaultModel === 'string' && MODEL.test(item.defaultModel)).map(([id, item]) => [id, `${item.enabled ? '已启用' : '未启用'} · ${item.defaultModel} · Key已填写`]);
+          return result(notice('API 列表', rows.length ? compactRows(rows) : '当前：尚无已配置提供商。', '配置：/api add\n模型编号：/m'));
         } catch { return result(notice('配置失败', '说明：无法读取配置，原配置保持。')); }
       }
       if (draft && now() > draft.expires) draft = null;
       if (!draft) {
         if (blocked) return result(notice('配置已中断', '说明：本条内容未交给模型。配置可能超时或服务已重启。', '重新开始：/api add\n退出配置：/api cancel'));
-        return result(notice('API 配置', compactRows([['新增或修改', '/api add'], ['查看提供商', '/api list'], ['取消配置', '/api cancel']]), '支持：OpenAI 兼容 Chat Completions API。\n说明：配置不调用 API，也不会自动切换模型。'));
+        return result(notice('API 配置', compactRows([['新增或修改', '/api add'], ['查看提供商', '/api'], ['取消配置', '/api cancel']])));
       }
       const confirm = draft.stage === 4 && ((!isApi && ['确认', '保存'].includes(text.trim())) || (isApi && ['save', 'confirm', '保存', '确认'].includes(action)));
       if (confirm) {
@@ -94,9 +98,11 @@ export async function createApiSetup({ providersFile, pendingFile, now = Date.no
           const previous = Object.hasOwn(providers, provider) ? providers[provider] : {};
           const ids = [...new Set([...(Array.isArray(previous.models) ? previous.models.filter(id => typeof id === 'string' && MODEL.test(id)) : []), ...(typeof previous.defaultModel === 'string' && MODEL.test(previous.defaultModel) ? [previous.defaultModel] : []), model])];
           providers[provider] = { ...previous, enabled: true, endpoint, apiKey, defaultModel: model, models: ids, images: previous.images === true, maxTokens: previous.maxTokens || 2048 };
+          const choices = assignApiModelNumbers(providers);
+          const number = choices.find(item => item.provider === provider && item.id === model).number;
           await atomicPrivate(providersFile, providers);
           await finish();
-          return result(notice('API 已保存', `提供商：${provider}\n模型版本：${model}\nAPI Key：已保存，不回显`, `执行端：先发送 /t srv\n切换：/m ${provider}/${model}\n说明：尚未切换；明确选择后按 API 计费。`));
+          return result(notice('API 已保存', `提供商：${provider}\n模型版本：${model}\nAPI Key：已保存，不回显`, `执行端：先发送 /t srv\n切换：/m ${number}\n说明：尚未切换；明确选择后按 API 计费。`));
         } catch { return result(notice('保存失败', '说明：配置流程仍保留，请重试确认或 /api cancel。')); }
       }
       if (isApi || /^[/／]/.test(text.trim())) return result(notice('API 配置中', '说明：本条消息未交给模型。请按当前步骤输入，或 /api cancel 退出。', draft.stage < 4 ? PROMPTS[draft.stage] : '保存：发送“确认”或 /api save'));

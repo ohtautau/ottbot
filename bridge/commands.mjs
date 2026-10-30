@@ -106,11 +106,11 @@ export function helpText(topic = '', state = {}, detailed = false) {
   if (topic === 'model') {
     const menu = compactRows(choices.map((id, index) => [`/m ${index + 1}`, modelLabel(id) + (id === model ? '  ← 当前' : '')]));
     if (detailed) return usageHelp('模型用法', '/m [模型]', '查看或切换后续对话模型。',
-      [['省略', '查看模型菜单'], ['1 / 2 / 3 / 4', '账号模型编号'], ['提供商/模型ID', '已配置的 API 模型']],
-      [['/m', '查看菜单'], ['/m 2', '选择账号的 Sol'], ['/m qwen/qwen-plus', '选择已配置 API']],
+      [['省略', '查看模型菜单'], ['数字编号', '选择菜单中的模型'], ['提供商/模型ID', '已配置的 API 模型']],
+      [['/m', '查看菜单'], ['/m 2', '切换模型'], ['/m qwen/qwen-plus', '选择已配置 API']],
       '[模型] 可选，括号不用输入。API 先用 /api add 配置；切换后按提供商计费，不自动回退。');
-    const apis = (state.apiModels || []).map(item => [`/m ${item.model}`, modelLabel(item.model) + (item.model === model ? '  ← 当前' : '')]);
-    return notice('模型', current, menu, apis.length ? 'API 模型：\n' + compactRows(apis) : '');
+    const apis = (state.apiModels || []).map(item => [`/m ${item.number}`, modelLabel(item.model) + (item.model === model ? '  ← 当前' : '')]);
+    return notice('模型', current, [menu, apis.length ? compactRows(apis) : ''].filter(Boolean).join('\n'));
   }
   if (topic === 'reasoning') return usageHelp('推理用法', '/r [档位]', '查看或修改后续任务的推理强度。',
     [['省略', '查看本模型可用档位'], ['0', '模型默认'], ['1 / 2 / 3', '低 / 中 / 高'], ['4 / 5 / 6', '超高 / 最大 / 极致']],
@@ -122,7 +122,7 @@ export function helpText(topic = '', state = {}, detailed = false) {
     '[参数] 可选，A|B 二选一，括号和 | 不用输入；<任务> 必填。电脑离线不转交其他机器。');
   if (topic === 'target') return notice('默认执行端', state.target ? `当前：${state.target === 'computer' ? '电脑' : '服务器'}` : '',
     compactRows([['服务器', '/t srv' + (state.target === 'server' ? '  ← 当前' : '')], ['电脑', '/t pc' + (state.target === 'computer' ? '  ← 当前' : '')]]),
-    detailed ? '用法：/t [服务器|电脑]\n说明：省略参数查看，填写时二选一。\n别名：/执行 服务器、/t 电脑。\n说明：只影响后续任务；电脑离线不转交其他机器。\n单次指定：/srv <任务> 或 /pc <任务>' : '单次指定：/srv <任务> 或 /pc <任务>\n说明：电脑离线不转交其他机器。');
+    detailed ? '用法：/t [服务器|电脑]\n说明：省略参数查看，填写时二选一。\n别名：/执行 服务器、/t 电脑。\n单次指定：/srv <任务> 或 /pc <任务>' : '单次指定：/srv <任务> 或 /pc <任务>');
   if (['route', 'server', 'computer'].includes(topic)) return notice('单次执行', commandRows([
     ['/srv <任务>', '交给服务器'], ['/pc <任务>', '交给电脑'],
   ]), '说明：可写多行任务；不改变默认执行端。');
@@ -137,6 +137,6 @@ export function helpText(topic = '', state = {}, detailed = false) {
   return notice('帮助', commandRows([
     ['/st', '查看状态'], ['/m [模型]', '查看或切换模型'], ['/r [档位]', '查看或调整推理'], ['/t [执行端]', '查看或设置默认端'],
     ['/srv <任务>', '服务器任务'], ['/pc <任务>', '电脑任务'], ['/cl', '清空上下文'],
-    ['/api', '配置模型 API'], ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'],
-  ]), '示例：/m 2、/r 2、/t pc\n中文 / 英文 / 缩写：/h a');
+    ['/api', '配置模型 API'], ['/h m', '模型用法'], ['/h r', '推理用法'], ['/h t', '执行端用法'], ['/h a', '指令别名'],
+  ]));
 }

@@ -27,14 +27,15 @@ test('shared command contract: aliases, boundaries, task preservation and help',
   const aligned = commandRows([['/st', '查看状态'], ['/m', '模型']]).split('\n');
   assert.equal(aligned[0].indexOf('/'), aligned[1].indexOf('/'));
   assert.ok(aligned.every(line => !line.slice(0, line.indexOf('/')).includes(' ')));
-  assert.match(helpText('target'), /说明：电脑离线不转交其他机器。/);
+  assert.doesNotMatch(helpText('target'), /电脑离线不转交其他机器/);
   for (const topic of ['model', 'reasoning', 'target']) {
     const view = helpText(topic, {}, true);
     for (const section of ['用法：', '作用：', '参数：', '示例：', '说明：']) assert.ok(view.includes(section));
   }
 
 
-  assert.match(helpText(), /中文 \/ 英文 \/ 缩写/);
+  assert.match(helpText(), /指令别名\u3000+\/h a/);
+  assert.doesNotMatch(helpText(), /示例：|中文 \/ 英文 \/ 缩写：/);
   const menu = helpText('model', { model: MODELS.sol });
   assert.match(menu, /\/m 2\u3000+OpenAI · gpt-6\.1-sol +← 当前/);
   assert.match(menu, /\/m 3\u3000+OpenAI · gpt-6\.1-terra/);

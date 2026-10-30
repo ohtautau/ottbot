@@ -23,18 +23,36 @@ async function providersFor(config) {
   catch { throw new Error('API 配置暂时无法读取。'); }
 }
 
+export function assignApiModelNumbers(providers) {
+  const rows = Object.entries(providers).filter(([provider, item]) => /^[a-z][a-z0-9_-]{0,31}$/.test(provider) && item && typeof item === 'object')
+    .flatMap(([provider, item]) => [...new Set([...(Array.isArray(item.models) ? item.models : []), item.defaultModel])]
+      .filter(id => typeof id === 'string' && API_MODEL_ID.test(id)).map(id => ({ provider, id, item })));
+  const valid = n => Number.isSafeInteger(n) && n >= 5 && n < 1000000;
+  const reserved = rows.flatMap(({ item }) => Object.values(item.modelNumbers || {}).filter(valid));
+  let next = Math.max(4, ...reserved) + 1;
+  const used = new Set();
+  return rows.map(({ provider, id, item }) => {
+    let number = Object.hasOwn(item.modelNumbers || {}, id) ? item.modelNumbers[id] : null;
+    if (!valid(number) || used.has(number)) number = next++;
+    used.add(number);
+    item.modelNumbers = { ...(item.modelNumbers || {}), [id]: number };
+    return { number, model: `${provider}/${id}`, provider, id, enabled: Boolean(item.enabled && item.apiKey) };
+  });
+}
+
 export async function configuredApiModels(config) {
   const providers = await providersFor(config);
-  return Object.entries(providers).filter(([provider, item]) => /^[a-z][a-z0-9_-]{0,31}$/.test(provider) && item?.enabled && item.apiKey)
-    .flatMap(([provider, item]) => [...new Set([item.defaultModel, ...(Array.isArray(item.models) ? item.models : [])])]
-      .filter(id => typeof id === 'string' && API_MODEL_ID.test(id))
-      .map(id => ({ model: `${provider}/${id}`, provider, id }))).slice(0, 50);
+  return assignApiModelNumbers(providers).filter(item => item.enabled).sort((a, b) => a.number - b.number).slice(0, 50);
 }
 
 export async function resolveConfiguredModel(config, value) {
   const resolved = resolveModel(value);
   if (resolved) return resolved;
-  return (await configuredApiModels(config)).find(item => item.provider === value.toLowerCase())?.model || null;
+  const models = await configuredApiModels(config);
+  if (/^[1-9][0-9]*$/.test(value)) return models.find(item => item.number === Number(value))?.model || null;
+  const providers = await providersFor(config);
+  const provider = value.toLowerCase();
+  return models.find(item => item.provider === provider && item.id === providers[provider]?.defaultModel)?.model || models.find(item => item.provider === provider)?.model || null;
 }
 
 export async function apiConfig(config, model) {

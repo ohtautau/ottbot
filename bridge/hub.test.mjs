@@ -54,7 +54,9 @@ test('server default, computer execution, persistent model selection and no offl
     assert.match(modelMenu, /OpenAI · gpt-6\.1-sol/);
     assert.match(modelMenu, /Qwen · qwen-plus/);
     assert.ok(!modelMenu.includes('test-qwen-key-not-real'));
-    await (await chat('/m qwen')).body.cancel();
+    assert.match(modelMenu, /\/m 5\u3000+Qwen · qwen-plus/);
+    assert.ok(!modelMenu.includes('API 模型：'));
+    await (await chat('/m 5')).body.cancel();
     assert.equal((await (await fetch(base + '/health', { headers })).json()).model, 'qwen/qwen-plus');
     assert.equal((await chat('/pc do not send server API credentials to computer')).status, 400);
     assert.equal(runs.length, 0);

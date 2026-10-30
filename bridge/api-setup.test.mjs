@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, access, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApiSetup } from './api-setup.mjs';
-import { configuredApiModels, resolveConfiguredModel, runApi } from './models.mjs';
+import { configuredApiModels, resolveConfiguredModel, runApi, assignApiModelNumbers } from './models.mjs';
 import { helpText } from './commands.mjs';
 
 async function fixture(run) {
@@ -33,8 +33,9 @@ test('owner configuration workflow never echoes keys; confirm saves and explicit
   if (process.platform !== 'win32') assert.equal((await stat(paths.providersFile)).mode & 0o777, 0o600);
   await assert.rejects(access(paths.pendingFile));
   assert.equal((await setup.handle('普通对话')).handled, false);
-  assert.ok(!(await setup.handle('/api list')).text.includes(secret));
+  assert.ok(!(await setup.handle('/api')).text.includes(secret));
   assert.equal(await resolveConfiguredModel(paths, 'qwen'), 'qwen/qwen-plus');
+  assert.equal(await resolveConfiguredModel(paths, '5'), 'qwen/qwen-plus');
   const models = await configuredApiModels(paths);
   const view = helpText('model', { apiModels: models });
   assert.match(view, /Qwen · qwen-plus/);
@@ -49,6 +50,29 @@ test('owner configuration workflow never echoes keys; confirm saves and explicit
   });
   assert.equal(answer, 'mock API answer');
   assert.equal(calls, 1);
+}));
+
+test('empty provider placeholders are hidden; assigned API model numbers survive additions', async () => fixture(async paths => {
+  const providers = {
+    deepseek: { enabled: false, apiKey: '' },
+    qwen: { enabled: true, apiKey: 'test-private-not-real', defaultModel: 'qwen-plus', models: ['qwen-plus'] },
+  };
+  await writeFile(paths.providersFile, JSON.stringify(providers));
+  const setup = await createApiSetup(paths);
+  const list = (await setup.handle('/api')).text;
+  assert.ok(!list.includes('deepseek'));
+  assert.ok(!list.includes('Key未填写') && !list.includes('切换：/m 提供商'));
+  const saved = JSON.parse(await readFile(paths.providersFile, 'utf8'));
+  assert.equal(saved.qwen.modelNumbers['qwen-plus'], 5);
+  saved.deepseek = { enabled: true, apiKey: 'test-private-other-not-real', defaultModel: 'deepseek-flash' };
+  saved.qwen.models.push('qwen-new');
+  saved.qwen.defaultModel = 'qwen-new';
+  const rows = assignApiModelNumbers(saved);
+  assert.equal(rows.find(item => item.model === 'qwen/qwen-plus').number, 5);
+  assert.equal(new Set(rows.map(item => item.number)).size, rows.length);
+  await writeFile(paths.providersFile, JSON.stringify(saved));
+  assert.equal(await resolveConfiguredModel(paths, '5'), 'qwen/qwen-plus');
+  assert.equal(await resolveConfiguredModel(paths, 'qwen'), 'qwen/qwen-new');
 }));
 
 test('cancel, expiry and restart cannot forward pending configuration values as chat', async () => fixture(async paths => {
