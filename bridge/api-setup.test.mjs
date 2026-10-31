@@ -61,6 +61,7 @@ test('empty provider placeholders are hidden; assigned API model numbers survive
   const setup = await createApiSetup(paths);
   const list = (await setup.handle('/api')).text;
   assert.ok(!list.includes('deepseek'));
+  assert.match(list, /\/m 5[^\n]*qwen[^\n]*qwen-plus/);
   assert.ok(!list.includes('Key未填写') && !list.includes('切换：/m 提供商'));
   const saved = JSON.parse(await readFile(paths.providersFile, 'utf8'));
   assert.equal(saved.qwen.modelNumbers['qwen-plus'], 5);
@@ -71,6 +72,10 @@ test('empty provider placeholders are hidden; assigned API model numbers survive
   assert.equal(rows.find(item => item.model === 'qwen/qwen-plus').number, 5);
   assert.equal(new Set(rows.map(item => item.number)).size, rows.length);
   await writeFile(paths.providersFile, JSON.stringify(saved));
+  const updatedList = (await setup.handle('/api')).text;
+  for (const row of rows) {
+    assert.ok(updatedList.split('\n').some(line => new RegExp(`^/m ${row.number}\\s`).test(line) && line.includes(row.provider) && line.includes(row.id)));
+  }
   assert.equal(await resolveConfiguredModel(paths, '5'), 'qwen/qwen-plus');
   assert.equal(await resolveConfiguredModel(paths, 'qwen'), 'qwen/qwen-new');
 }));
