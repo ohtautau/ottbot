@@ -70,7 +70,7 @@ def main():
         run('python3', '-c', 'from PIL import Image')
     for name in ['worker.mjs', 'hub.mjs', 'weixin.mjs', 'models.mjs', 'reasoning.mjs', 'api-setup.mjs', 'images.mjs', 'ottlog-client.mjs', 'ottlog-commands.mjs', 'note-images.mjs']:
         run(paths['node'], '--check', str(bridge / name))
-    run(paths['node'], '--test', *(str(bridge / name) for name in ['worker.test.mjs', 'hub.test.mjs', 'weixin.test.mjs', 'models.test.mjs', 'api-setup.test.mjs', 'images.test.mjs', 'ottlog-commands.test.mjs']))
+    run(paths['node'], '--test', *(str(bridge / name) for name in ['worker.test.mjs', 'hub.test.mjs', 'weixin.test.mjs', 'models.test.mjs', 'api-setup.test.mjs', 'images.test.mjs', 'ottlog-commands.test.mjs', 'ottlog-auth.test.mjs']))
     private_json(shared / 'providers.json', json.loads((bridge / 'providers.example.json').read_text()))
     relay = private_json(shared / 'relay.json', {
         'clientToken': secrets.token_hex(32), 'workerToken': secrets.token_hex(32),
