@@ -100,7 +100,7 @@ export async function createApiSetup({ providersFile, pendingFile, now = Date.no
           const rows = assignApiModelNumbers(providers)
             .filter(({ provider }) => PROVIDER.test(provider) && !RESERVED.includes(provider) && typeof providers[provider]?.apiKey === 'string' && providers[provider].apiKey.length >= 10)
             .sort((a, b) => a.number - b.number)
-            .map(({ number, provider, id }) => [`/m ${number}`, `${provider} · ${providers[provider].enabled ? '已启用' : '未启用'} · ${id} · Key已填写`]);
+            .map(({ number, provider, id }) => [`/m ${number}`, `${provider}·${id}（${providers[provider].enabled ? '可用' : '未启用'}）`]);
           return result(notice('API 列表', rows.length ? compactRows(rows) : '当前：尚无已配置提供商。', '配置：/api add\n删除：/api delete <模型编号>\n模型编号：/m'));
         } catch { return result(notice('配置失败', '说明：无法读取配置，原配置保持。')); }
       }
