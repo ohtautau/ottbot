@@ -43,12 +43,14 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
   }
   async function prepareInput(text, { hasImages = false } = {}) {
     let changed = false;
+    let ended = false;
     const command = parseCommand(text);
     if (!hasImages && state.imageUntil && command?.type !== 'noteend') { state.imageUntil = 0; changed = true; }
-    if (state.noteSession && (state.noteSession.until <= now().getTime() || command && command.type !== 'noteend')) {
-      delete state.noteSession; changed = true;
+    if (state.noteSession && command?.type !== 'noteend' && (state.noteSession.until <= now().getTime() || command)) {
+      delete state.noteSession; changed = true; ended = true;
     }
     if (changed) await persist();
+    return ended ? notice('便签会话已结束', '内容：已保存的文字和图片保留。') : '';
   }
   return {
     prepareInput,
@@ -96,7 +98,7 @@ export async function createOttlogCommands({ configFile, stateFile, clientFactor
             const saved = await note(client, command.value);
             state.imageUntil = 0; state.noteSession = { id: saved.item.id, until: now().getTime() + 10 * 60 * 1000 };
             await persist();
-            return { handled: true, text: notice('便签会话已开启', `便签：${saved.item.title}\n后续：直接发送文字或图片，将追加到这张便签。`, '保存：每条消息立即保存。\n结束：/end、其他指令或10分钟到期。') };
+            return { handled: true, text: notice('便签会话已开启', `便签：${saved.item.title}\n后续：直接发送文字或图片，将追加到这张便签。`, '结束：/end、其他指令或10分钟到期。') };
           }
           const { data } = await load(client, 'memos', initialMemoState, isMemoState);
           const notes = [...data.notes].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);

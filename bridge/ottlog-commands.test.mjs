@@ -97,6 +97,7 @@ test('today shows all eligible high-priority tasks and fills fewer than three by
 test('note conversation appends to one note across restart and ends before another command', async () => fixture(async (handler, data, options) => {
   const opened = await handler.handle('/note 我的便签');
   assert.match(opened.text, /会话已开启/);
+  assert.ok(!opened.text.includes('保存：每条消息立即保存。'));
   const id = data.memos.notes[0].id;
   await handler.handle('第一段\n第二行');
   const recovered = await createOttlogCommands(options);
@@ -106,12 +107,15 @@ test('note conversation appends to one note across restart and ends before anoth
   assert.equal(data.memos.notes[0].id, id);
   assert.equal(data.memos.notes[0].body, '第一段\n第二行\n\n图片说明');
   assert.equal(data.memos.notes[0].images.length, 1);
-  await recovered.prepareInput('/api add');
+  assert.match(await recovered.prepareInput('/api add'), /便签会话已结束/);
+  assert.equal(await recovered.prepareInput('/api add'), '');
   assert.equal(recovered.noteMode, false);
   assert.equal((await recovered.handle('ordinary text')).handled, false);
   assert.equal(data.memos.notes[0].body.includes('ordinary'), false);
   await recovered.handle('/note 第二张');
   await recovered.handle('保存内容');
+  assert.equal(await recovered.prepareInput('/end'), '');
+  assert.equal(recovered.noteMode, true);
   assert.match((await recovered.handle('/end')).text, /会话已结束/);
   assert.equal(recovered.noteMode, false);
   assert.equal((await recovered.handle('next ordinary')).handled, false);
@@ -124,6 +128,7 @@ test('note session expiration, deleted target and capacity errors do not corrupt
   await timed.handle('/note 超时便签');
   await timed.handle('到期前');
   time += 10 * 60 * 1000;
+  assert.match(await timed.prepareInput('到期后'), /便签会话已结束/);
   assert.equal((await timed.handle('到期后')).handled, false);
   assert.equal(data.memos.notes[0].body, '到期前');
   await timed.handle('/note 图片上限');

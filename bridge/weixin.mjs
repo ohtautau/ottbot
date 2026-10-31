@@ -234,7 +234,8 @@ export async function monitor(configPath) {
           const items = message.item_list || [];
           const input = items.filter(item => item.type === 1).map(item => item.text_item?.text || '').join('\n').trim();
           const hasImages = items.some(item => item.type === 2);
-          await ottlog.prepareInput(input, { hasImages });
+          const endedNote = await ottlog.prepareInput(input, { hasImages });
+          if (endedNote) await send(message, endedNote, true);
           const setup = await apiSetup.handle(input, items.some(item => item.type !== 1));
           if (setup.handled) {
             await send(message, setup.text, true);
