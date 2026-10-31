@@ -41,6 +41,8 @@ Codex 通道每次调用前验证 ChatGPT 登录，忽略 API Key 环境变量�
 
 图片回传：Codex 最终回复中的本地 Markdown 图片会转换为图片附件，经私有转接返回服务器，再使用微信 CDN 加密上传和图片消息发送。支持 PNG/JPEG/WebP，每条最多4张、单张10MB、总共20MB；不读取远程图片链接、工作区外文件或私有配置目录，API 文本不会触发本地文件读取。不等于保存到博客。直接在微信发送图片给当前模型，用自然语言要求回复图片；图片生成、截图和保存能力取决于执行端实际工具及权限。
 
+出站图片先尝试原图。大于48KB的图片遇到CDN HTTP500时，保留原文件，改用最多48KB的JPEG兼容副本重新申请上传票据（重新计算MD5、密钥和密文大小）；兼容副本可能缩小尺寸和清晰度，透明区域以白底呈现。仅重试上传，不在消息发送失败或送达不确定后再次发图。错误提示只保留阶段、HTTP状态和数字错误码，不输出微信签名参数或密钥。
+
 ## 本机代理与 CodeBuddy
 
 新建本机配置时设置 `OTTBOT_SSH_TARGET` 和 `OTTBOT_SSH_KEY`，可选 `OTTBOT_KNOWN_HOSTS`、`OTTBOT_WORKSPACE`，再运行 `node bridge/prepare-local.mjs <Codex可执行文件路径>`。私有配置位于已忽略的 `local-state/codex-bridge`。核对 SSH 主机指纹后再启动代理。

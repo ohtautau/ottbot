@@ -10,7 +10,7 @@ import { parseCommand } from './worker.mjs';
 import { createApiSetup } from './api-setup.mjs';
 import { validateReplyImages } from './images.mjs';
 import { createOttlogCommands } from './ottlog-commands.mjs';
-import { compressNoteImages } from './note-images.mjs';
+import { compressNoteImages, compressWeixinImage, MAX_WEIXIN_COMPAT_BYTES } from './note-images.mjs';
 
 const API = 'https://ilinkai.weixin.qq.com';
 const CHANNEL_VERSION = '2.4.8';
@@ -151,154 +151,173 @@ export function splitBlogText(text) {
 
 // Original-image upload and message format follow Tencent/openclaw-weixin's
 // docs/protocol.md and src/messaging/send.ts. Never forward bot auth to the CDN.
-export async function sendWeixinImages(account, message, images, { request = api, transport = fetch } = {}) {
+export async function sendWeixinImages(account, message, images, { request = api, transport = fetch, compressImage = compressWeixinImage } = {}) {
   if (message.from_user_id !== account.owner || message.group_id || message.message_type !== 1 || !message.context_token) throw new Error('图片只能回复给绑定账号的私聊。');
   const validated = validateReplyImages(images);
   let sent = 0, stage = '申请上传地址', sending = false;
-  try {
-    for (const { bytes } of validated) {
-      stage = '申请上传地址'; sending = false;
-      const key = randomBytes(16), filekey = randomBytes(16).toString('hex');
-      const cipher = createCipheriv('aes-128-ecb', key, null);
-      const encrypted = Buffer.concat([cipher.update(bytes), cipher.final()]);
-      const upload = await request(account.baseUrl, '/ilink/bot/getuploadurl', {
-        filekey, media_type: 1, to_user_id: account.owner,
-        rawsize: bytes.length, rawfilemd5: createHash('md5').update(bytes).digest('hex'),
-        filesize: encrypted.length, no_need_thumb: true, aeskey: key.toString('hex'),
-      }, account.token);
-      if (!upload.upload_full_url?.trim() && !upload.upload_param) throw new Error('微信未返回图片上传地址。');
-      const url = trustedWeixinUrl(upload.upload_full_url?.trim() || `https://novac2c.cdn.weixin.qq.com/c2c/upload?encrypted_query_param=${encodeURIComponent(upload.upload_param)}&filekey=${encodeURIComponent(filekey)}`);
-      let download;
-      stage = '上传图片';
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const response = await transport(url, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: encrypted, redirect: 'error', signal: AbortSignal.timeout(30000) });
-          const param = response.headers.get('x-encrypted-param');
-          await response.body?.cancel();
-          if (response.status >= 400 && response.status < 500) throw Object.assign(new Error(`CDN HTTP ${response.status}`), { permanent: true });
-          if (response.status !== 200) throw new Error(`CDN HTTP ${response.status}`);
-          if (!param) throw new Error('CDN未返回图片媒体参数。');
-          download = param; break;
-        } catch (error) { if (error.permanent || attempt === 2) throw error; }
-      }
-      stage = '发送图片消息'; sending = true;
-      await request(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
-        from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
-        context_token: message.context_token, item_list: [{ type: 2, image_item: {
-          media: { encrypt_query_param: download, aes_key: Buffer.from(key.toString('hex')).toString('base64'), encrypt_type: 1 }, mid_size: encrypted.length,
-        } }],
-      } }, account.token);
-      sent++;
+  async function uploadImage(bytes, allowCompatibility = false) {
+    stage = '申请上传地址';
+    const key = randomBytes(16), filekey = randomBytes(16).toString('hex');
+    const cipher = createCipheriv('aes-128-ecb', key, null);
+    const encrypted = Buffer.concat([cipher.update(bytes), cipher.final()]);
+    const upload = await request(account.baseUrl, '/ilink/bot/getuploadurl', {
+      filekey, media_type: 1, to_user_id: account.owner,
+      rawsize: bytes.length, rawfilemd5: createHash('md5').update(bytes).digest('hex'),
+      filesize: encrypted.length, no_need_thumb: true, aeskey: key.toString('hex'),
+    }, account.token);
+    if (!upload.upload_full_url?.trim() && !upload.upload_param) throw new Error('微信未返回图片上传地址。');
+    const url = trustedWeixinUrl(upload.upload_full_url?.trim() || `https://novac2c.cdn.weixin.qq.com/c2c/upload?encrypted_query_param=${encodeURIComponent(upload.upload_param)}&filekey=${encodeURIComponent(filekey)}`);
+    let download;
+    stage = '上传图片';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await transport(url, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: encrypted, redirect: 'error', signal: AbortSignal.timeout(30000) });
+        const param = response.headers.get('x-encrypted-param');
+        await response.body?.cancel();
+        const value = response.headers.get('x-error-code');
+        const code = /^-?\d{1,12}$/.test(value || '') ? Number(value) : null;
+        const failure = () => new Error(`CDN HTTP ${response.status}${code === null ? '' : '（错误码：' + code + '）'}`);
+        if (response.status >= 400 && response.status < 500) throw Object.assign(failure(), { permanent: true });
+        if (response.status !== 200) throw Object.assign(failure(), { compatibilityFallback: allowCompatibility && response.status === 500, permanent: allowCompatibility && response.status === 500 });
+        if (!param) throw new Error('CDN未返回图片媒体参数。');
+        download = param; break;
+      } catch (error) { if (error.permanent || attempt === 2) throw error; }
     }
-    return sent;
-  } catch (error) {
-    // Only fixed diagnostics and numeric protocol codes reach chat/logs. Never
-    // include an upstream errmsg, signed CDN URL, image key, or context token.
-    const reason = /^(?:微信通道HTTP \d{3}|CDN HTTP \d{3}|微信通道返回错误(?:（(?:ret|errcode)=-?\d+(?:，(?:ret|errcode)=-?\d+)*）)?。|微信未返回图片上传地址。|CDN未返回图片媒体参数。)$/.test(error.message) ? error.message
-      : error.message === 'WEIXIN_SESSION_EXPIRED' ? '微信授权已过期。' : '网络或微信响应异常。';
-    console.error(`图片发送失败：阶段=${stage}；原因=${reason}；已确认=${sent}/${validated.length}`);
-    throw new Error(`图片发送未完成：${stage}失败。\n原因：${reason}\n已确认：${sent}/${validated.length} 张。${sending ? '\n说明：最后一张的送达状态可能未确认。' : ''}`);
+    return { key, download, size: encrypted.length };
+}
+try {
+  for (const { bytes } of validated) {
+    sending = false;
+    let uploaded;
+    try { uploaded = await uploadImage(bytes, bytes.length > MAX_WEIXIN_COMPAT_BYTES); }
+    catch (error) {
+      if (!error.compatibilityFallback) throw error;
+      stage = '压缩兼容图片';
+      const compressed = await compressImage(bytes);
+      if (!Buffer.isBuffer(compressed) || !compressed.length || compressed.length > MAX_WEIXIN_COMPAT_BYTES) throw new Error('图片兼容压缩失败。');
+      validateReplyImages([{ data: compressed.toString('base64') }]);
+      console.error(`微信CDN大图上传失败，使用兼容压缩图重试：原大小=${bytes.length}；发送大小=${compressed.length}`);
+      // New bytes require a fresh ticket, key, MD5 and ciphertext size. Never retry sendmessage here.
+      uploaded = await uploadImage(compressed);
+    }
+    stage = '发送图片消息'; sending = true;
+    await request(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
+      from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
+      context_token: message.context_token, item_list: [{ type: 2, image_item: {
+        media: { encrypt_query_param: uploaded.download, aes_key: Buffer.from(uploaded.key.toString('hex')).toString('base64'), encrypt_type: 1 }, mid_size: uploaded.size,
+      } }],
+    } }, account.token);
+    sent++;
   }
+  return sent;
+} catch (error) {
+  // Only fixed diagnostics and numeric protocol codes reach chat/logs. Never
+  // include an upstream errmsg, signed CDN URL, image key, or context token.
+  const reason = /^(?:微信通道HTTP \d{3}|CDN HTTP \d{3}(?:（错误码：-?\d{1,12}）)?|微信通道返回错误(?:（(?:ret|errcode)=-?\d+(?:，(?:ret|errcode)=-?\d+)*）)?。|微信未返回图片上传地址。|CDN未返回图片媒体参数。|图片兼容压缩失败。)$/.test(error.message) ? error.message
+    : error.message === 'WEIXIN_SESSION_EXPIRED' ? '微信授权已过期。' : '网络或微信响应异常。';
+  console.error(`图片发送失败：阶段=${stage}；原因=${reason}；已确认=${sent}/${validated.length}`);
+  throw new Error(`图片发送未完成：${stage}失败。\n原因：${reason}\n已确认：${sent}/${validated.length} 张。${sending ? '\n说明：最后一张的送达状态可能未确认。' : ''}`);
+}
 }
 
 export async function monitor(configPath) {
-  const config = JSON.parse(await readFile(configPath, 'utf8'));
-  const directory = dirname(configPath);
-  const account = JSON.parse(await readFile(join(directory, 'weixin-account.json'), 'utf8'));
-  const apiSetup = await createApiSetup({ providersFile: join(directory, 'providers.json'), pendingFile: join(directory, 'api-setup-pending.json') });
-  process.env.TZ = 'Asia/Shanghai';
-  const ottlog = await createOttlogCommands({ configFile: join(directory, 'ottlog.json'), stateFile: join(directory, 'ottlog-command-state.json'), compressImages: compressNoteImages });
-  trustedWeixinUrl(account.baseUrl);
-  if (!account.token || !account.owner) throw new Error('微信尚未绑定。');
-  const cursorFile = join(directory, 'weixin-cursor.json');
-  const histories = new Map(); // Separate target and model/provider; restart clears chat history.
-  let state = { cursor: '', seen: [] };
-  try { state = JSON.parse(await readFile(cursorFile, 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const send = (message, text, menu = false) => api(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
-    from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
-    context_token: message.context_token, item_list: [{ type: 1, text_item: { text: formatWeixinText(text, menu) } }],
-  } }, account.token);
-  console.log('微信服务器接收端启动，仅接受扫码账号的私聊。');
-  for (;;) {
-    try {
-      const update = await api(account.baseUrl, '/ilink/bot/getupdates', { get_updates_buf: state.cursor || '' }, account.token, 'POST', 45000);
-      for (const message of update.msgs || []) {
-        if (message.message_type !== 1 || message.from_user_id !== account.owner || message.group_id || !message.context_token) continue;
-        const id = String(message.client_id || message.message_id || message.seq || '');
-        if (!id || state.seen.includes(id)) continue;
-        state.seen = [...state.seen.slice(-255), id];
-        // Persist receipt before invoking any execution; a restart never repeats a control task.
-        await atomicJson(cursorFile, state);
-        try {
-          const items = message.item_list || [];
-          const input = items.filter(item => item.type === 1).map(item => item.text_item?.text || '').join('\n').trim();
-          const hasImages = items.some(item => item.type === 2);
-          const endedNote = await ottlog.prepareInput(input, { hasImages });
-          if (endedNote) await send(message, endedNote, true);
-          const setup = await apiSetup.handle(input, items.some(item => item.type !== 1));
-          if (setup.handled) {
-            await send(message, setup.text, true);
-            continue; // Configuration inputs never reach models or conversation history.
-          }
-          let defaultTarget;
-          try { defaultTarget = JSON.parse(await readFile(join(directory, 'hub-runtime/hub-selection.json'), 'utf8')).target; }
-          catch (error) { if (error.code !== 'ENOENT') throw error; defaultTarget = 'server'; }
-          const receipt = ottlog.noteMode || ottlog.imageMode && hasImages ? '' : receiptText(input, items, defaultTarget);
-          if (receipt) await send(message, receipt).catch(() => console.error('微信接收确认发送失败，继续处理。'));
-          const blog = await ottlog.handle(input, { hasImages, readImages: async () => (await receiveContent(message)).filter(part => part.type === 'image_url').map(part => ({ dataUrl: part.image_url.url })) });
-          if (blog.handled) { for (const page of splitBlogText(blog.text)) await send(message, page, true); continue; }
-          const content = await receiveContent(message);
-          const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
-          if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {
-            histories.clear();
-            await send(message, '【清空成功】\n\n已清空短期对话上下文。\n微信聊天记录和博客数据保留。', true);
-            continue;
-          }
-          const parsed = parseCommand(plainText);
-          const command = parsed && parsed.type !== 'route';
-          let history = [];
-          if (!command) {
-            let target = routingCommand(plainText)?.target;
-            const health = await fetch(config.hubUrl + '/health', { headers: { Authorization: `Bearer ${config.workerToken}` }, signal: AbortSignal.timeout(5000) });
-            if (!health.ok) throw new Error('路由状态暂时不可用。');
-            const current = await health.json();
-            history = histories.get(`${target || current.target}:${current.model}`) || [];
-          }
-          const response = await fetch(config.hubUrl + '/v1/chat/completions', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.workerToken}` },
-            body: JSON.stringify({ model: 'codex-local', messages: [...history, { role: 'user', content }], stream: false }), signal: AbortSignal.timeout(650000),
-          });
-          const result = await response.json();
-          const target = response.headers.get('x-ottbot-target');
-          const text = response.ok ? result.choices?.[0]?.message?.content : result.error?.message;
-          const images = response.ok ? result.ottbot_images || [] : [];
-          if (!text && !images.length) throw new Error('执行端未返回明确结果。');
-          if (images.length) await sendWeixinImages(account, message, images);
-          if (text) await send(message, (target ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n` : '') + text, Boolean(command));
-          if (response.ok && target) histories.set(`${target}:${response.headers.get('x-ottbot-model')}`, [...history,
-            { role: 'user', content: plainText.slice(0, 6000) || '（发送了照片，历史中不保留原图片）' },
-            { role: 'assistant', content: (text || '（已发送图片，历史中不保留图片数据）').slice(0, 6000) },
-          ].slice(-12));
-        } catch (error) {
-          const safe = /照片|文字|图片|每条消息/.test(error.message) ? error.message : '本次请求未完成，请先发 /状态 查看连接；不要假定操作已成功。';
-          await send(message, safe).catch(() => console.error('微信错误提示发送失败。'));
-        }
-      }
-      if (update.get_updates_buf) state.cursor = update.get_updates_buf;
+const config = JSON.parse(await readFile(configPath, 'utf8'));
+const directory = dirname(configPath);
+const account = JSON.parse(await readFile(join(directory, 'weixin-account.json'), 'utf8'));
+const apiSetup = await createApiSetup({ providersFile: join(directory, 'providers.json'), pendingFile: join(directory, 'api-setup-pending.json') });
+process.env.TZ = 'Asia/Shanghai';
+const ottlog = await createOttlogCommands({ configFile: join(directory, 'ottlog.json'), stateFile: join(directory, 'ottlog-command-state.json'), compressImages: compressNoteImages });
+trustedWeixinUrl(account.baseUrl);
+if (!account.token || !account.owner) throw new Error('微信尚未绑定。');
+const cursorFile = join(directory, 'weixin-cursor.json');
+const histories = new Map(); // Separate target and model/provider; restart clears chat history.
+let state = { cursor: '', seen: [] };
+try { state = JSON.parse(await readFile(cursorFile, 'utf8')); }
+catch (error) { if (error.code !== 'ENOENT') throw error; }
+const send = (message, text, menu = false) => api(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
+  from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
+  context_token: message.context_token, item_list: [{ type: 1, text_item: { text: formatWeixinText(text, menu) } }],
+} }, account.token);
+console.log('微信服务器接收端启动，仅接受扫码账号的私聊。');
+for (;;) {
+  try {
+    const update = await api(account.baseUrl, '/ilink/bot/getupdates', { get_updates_buf: state.cursor || '' }, account.token, 'POST', 45000);
+    for (const message of update.msgs || []) {
+      if (message.message_type !== 1 || message.from_user_id !== account.owner || message.group_id || !message.context_token) continue;
+      const id = String(message.client_id || message.message_id || message.seq || '');
+      if (!id || state.seen.includes(id)) continue;
+      state.seen = [...state.seen.slice(-255), id];
+      // Persist receipt before invoking any execution; a restart never repeats a control task.
       await atomicJson(cursorFile, state);
-      if (!(update.msgs || []).length) await delay(500);
-    } catch (error) {
-      const expired = error.message === 'WEIXIN_SESSION_EXPIRED';
-      console.error(expired ? '微信授权已过期，暂停一小时后重试；可重新扫码绑定。' : '微信通道暂时不可用，稍后重试。');
-      await delay(expired ? 3600000 : 10000);
+      try {
+        const items = message.item_list || [];
+        const input = items.filter(item => item.type === 1).map(item => item.text_item?.text || '').join('\n').trim();
+        const hasImages = items.some(item => item.type === 2);
+        const endedNote = await ottlog.prepareInput(input, { hasImages });
+        if (endedNote) await send(message, endedNote, true);
+        const setup = await apiSetup.handle(input, items.some(item => item.type !== 1));
+        if (setup.handled) {
+          await send(message, setup.text, true);
+          continue; // Configuration inputs never reach models or conversation history.
+        }
+        let defaultTarget;
+        try { defaultTarget = JSON.parse(await readFile(join(directory, 'hub-runtime/hub-selection.json'), 'utf8')).target; }
+        catch (error) { if (error.code !== 'ENOENT') throw error; defaultTarget = 'server'; }
+        const receipt = ottlog.noteMode || ottlog.imageMode && hasImages ? '' : receiptText(input, items, defaultTarget);
+        if (receipt) await send(message, receipt).catch(() => console.error('微信接收确认发送失败，继续处理。'));
+        const blog = await ottlog.handle(input, { hasImages, readImages: async () => (await receiveContent(message)).filter(part => part.type === 'image_url').map(part => ({ dataUrl: part.image_url.url })) });
+        if (blog.handled) { for (const page of splitBlogText(blog.text)) await send(message, page, true); continue; }
+        const content = await receiveContent(message);
+        const plainText = content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
+        if (parseCommand(plainText)?.type === 'clear' && content.every(part => part.type === 'text')) {
+          histories.clear();
+          await send(message, '【清空成功】\n\n已清空短期对话上下文。\n微信聊天记录和博客数据保留。', true);
+          continue;
+        }
+        const parsed = parseCommand(plainText);
+        const command = parsed && parsed.type !== 'route';
+        let history = [];
+        if (!command) {
+          let target = routingCommand(plainText)?.target;
+          const health = await fetch(config.hubUrl + '/health', { headers: { Authorization: `Bearer ${config.workerToken}` }, signal: AbortSignal.timeout(5000) });
+          if (!health.ok) throw new Error('路由状态暂时不可用。');
+          const current = await health.json();
+          history = histories.get(`${target || current.target}:${current.model}`) || [];
+        }
+        const response = await fetch(config.hubUrl + '/v1/chat/completions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.workerToken}` },
+          body: JSON.stringify({ model: 'codex-local', messages: [...history, { role: 'user', content }], stream: false }), signal: AbortSignal.timeout(650000),
+        });
+        const result = await response.json();
+        const target = response.headers.get('x-ottbot-target');
+        const text = response.ok ? result.choices?.[0]?.message?.content : result.error?.message;
+        const images = response.ok ? result.ottbot_images || [] : [];
+        if (!text && !images.length) throw new Error('执行端未返回明确结果。');
+        if (images.length) await sendWeixinImages(account, message, images);
+        if (text) await send(message, (target ? `【${target === 'computer' ? '电脑' : '服务器'}】\n\n` : '') + text, Boolean(command));
+        if (response.ok && target) histories.set(`${target}:${response.headers.get('x-ottbot-model')}`, [...history,
+          { role: 'user', content: plainText.slice(0, 6000) || '（发送了照片，历史中不保留原图片）' },
+          { role: 'assistant', content: (text || '（已发送图片，历史中不保留图片数据）').slice(0, 6000) },
+        ].slice(-12));
+      } catch (error) {
+        const safe = /照片|文字|图片|每条消息/.test(error.message) ? error.message : '本次请求未完成，请先发 /状态 查看连接；不要假定操作已成功。';
+        await send(message, safe).catch(() => console.error('微信错误提示发送失败。'));
+      }
     }
+    if (update.get_updates_buf) state.cursor = update.get_updates_buf;
+    await atomicJson(cursorFile, state);
+    if (!(update.msgs || []).length) await delay(500);
+  } catch (error) {
+    const expired = error.message === 'WEIXIN_SESSION_EXPIRED';
+    console.error(expired ? '微信授权已过期，暂停一小时后重试；可重新扫码绑定。' : '微信通道暂时不可用，稍后重试。');
+    await delay(expired ? 3600000 : 10000);
   }
+}
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href) {
-  const configPath = resolve(process.argv[3]);
-  const run = process.argv[2] === 'login' ? pair : process.argv[2] === 'run' ? monitor : null;
-  if (!run) throw new Error('Usage: weixin.mjs login|run CONFIG');
-  run(configPath).catch(error => { console.error(error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')); process.exitCode = 1; });
+const configPath = resolve(process.argv[3]);
+const run = process.argv[2] === 'login' ? pair : process.argv[2] === 'run' ? monitor : null;
+if (!run) throw new Error('Usage: weixin.mjs login|run CONFIG');
+run(configPath).catch(error => { console.error(error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')); process.exitCode = 1; });
 }

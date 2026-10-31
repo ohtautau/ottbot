@@ -114,3 +114,59 @@ test('outbound images upload encrypted originals and send only to the bound conv
     request: async () => { throw new Error('secret-context-key-token'); },
   }), error => error.message.includes('申请上传地址失败') && !error.message.includes('secret-context'));
 });
+
+test('CDN 500 falls back to a bounded image with fresh upload metadata, but never retries a failed message send', async () => {
+  const small = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ6kAAAAASUVORK5CYII=', 'base64');
+  const large = Buffer.concat([small, Buffer.alloc(64 * 1024)]);
+  const account = { owner: 'test-owner', token: 'test-private-token', baseUrl: 'https://ilinkai.weixin.qq.com' };
+  const message = { from_user_id: account.owner, message_type: 1, context_token: 'test-context' };
+  const images = [{ data: large.toString('base64') }];
+  const tickets = [];
+  let uploads = 0, compressed = 0, sends = 0;
+  const request = async (_base, path, body) => {
+    if (path.endsWith('getuploadurl')) { tickets.push(body); return { upload_param: 'test' }; }
+    sends++;
+    assert.equal(body.msg.context_token, message.context_token);
+    assert.equal(body.msg.item_list[0].image_item.mid_size, tickets.at(-1).filesize);
+    return { ret: 0 };
+  };
+  assert.equal(await sendWeixinImages(account, message, images, {
+    request,
+    compressImage: async bytes => { compressed++; assert.deepEqual(bytes, large); return small; },
+    transport: async (_url, init) => {
+      uploads++;
+      const metadata = tickets.at(-1);
+      const decipher = createDecipheriv('aes-128-ecb', Buffer.from(metadata.aeskey, 'hex'), null);
+      assert.deepEqual(Buffer.concat([decipher.update(init.body), decipher.final()]), uploads === 1 ? large : small);
+      return uploads === 1 ? new Response('', { status: 500, headers: { 'x-error-code': '-5104001', 'x-error-message': 'private-upstream-value' } })
+        : new Response('', { status: 200, headers: { 'x-encrypted-param': 'test' } });
+    },
+  }), 1);
+  assert.equal(compressed, 1); assert.equal(uploads, 2); assert.equal(sends, 1);
+  assert.equal(tickets.length, 2);
+  assert.notEqual(tickets[0].filekey, tickets[1].filekey);
+  assert.notEqual(tickets[0].aeskey, tickets[1].aeskey);
+  assert.equal(tickets[1].rawsize, small.length);
+  assert.equal(tickets[1].rawfilemd5, createHash('md5').update(small).digest('hex'));
+
+  sends = 0; compressed = 0;
+  await assert.rejects(sendWeixinImages(account, message, images, {
+    request: async (_base, path) => {
+      if (path.endsWith('getuploadurl')) return { upload_param: 'test' };
+      sends++; throw new Error('微信通道HTTP 500');
+    },
+    compressImage: async () => { compressed++; return small; },
+    transport: async () => new Response('', { status: 200, headers: { 'x-encrypted-param': 'test' } }),
+  }), /发送图片消息失败。[\s\S]*送达状态可能未确认/);
+  assert.equal(sends, 1); assert.equal(compressed, 0);
+
+  await assert.rejects(sendWeixinImages(account, message, images, {
+    request: async () => ({ upload_param: 'test' }),
+    compressImage: async () => Buffer.alloc(49 * 1024),
+    transport: async () => new Response('', { status: 500 }),
+  }), /图片兼容压缩失败/);
+  await assert.rejects(sendWeixinImages(account, message, [{ data: small.toString('base64') }], {
+    request: async () => ({ upload_param: 'test' }),
+    transport: async () => new Response('', { status: 500, headers: { 'x-error-code': '-5104001', 'x-error-message': 'private-upstream-value' } }),
+  }), error => error.message.includes('-5104001') && !error.message.includes('private-upstream'));
+});

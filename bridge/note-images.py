@@ -1,4 +1,4 @@
-"""Compress stdin image bytes to the existing Ottlog memo limit, stdout JPEG."""
+"""Bounded stdin image compression for Ottlog memos or Weixin upload fallback."""
 import io
 import sys
 from PIL import Image, ImageOps
@@ -18,12 +18,15 @@ if image.mode != 'RGB':
     else:
         background.paste(image.convert('RGB'))
     image = background
-for size, quality in [(1280, 75), (960, 55), (720, 40)]:
+weixin = '--weixin' in sys.argv[1:]
+limit = 48 * 1024 if weixin else 180 * 1024
+profiles = [(1600, 85), (1280, 80), (1024, 75), (960, 65), (800, 60), (640, 55), (512, 45), (320, 40)] if weixin else [(1280, 75), (960, 55), (720, 40)]
+for size, quality in profiles:
     frame = image.copy()
     frame.thumbnail((size, size))
     output = io.BytesIO()
     frame.save(output, 'JPEG', quality=quality, optimize=True)
-    if len(output.getvalue()) <= 180 * 1024:
+    if len(output.getvalue()) <= limit:
         sys.stdout.buffer.write(output.getvalue())
         break
 else:
