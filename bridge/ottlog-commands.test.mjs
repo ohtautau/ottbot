@@ -141,13 +141,17 @@ test('blog client refuses changed accounts and concurrent snapshot changes, neve
   const folder = await mkdtemp(join(tmpdir(), 'ottbot-client-'));
   const configFile = join(folder, 'config.json');
   await writeFile(configFile, JSON.stringify({ origin: 'https://blog.example', expectedUserName: 'owner', expectedAdmin: false, cookies: { session: 'test-not-real-cookie' } }));
-  let puts = 0, username = 'other';
+  let puts = 0, username = 'other', authenticated = true;
   const client = await createOttlogClient(configFile, async (url, init) => {
     if (init.method === 'PUT') puts++;
-    return new Response(JSON.stringify(url.pathname.endsWith('/session') ? { authenticated: true, userName: username, isAdmin: false, csrfToken: 'test-csrf' } : { data: { changed: true } }));
+    return new Response(JSON.stringify(url.pathname.endsWith('/session') ? { authenticated, userName: username, isAdmin: false, csrfToken: 'test-csrf' } : { data: { changed: true } }));
   });
   try {
     await assert.rejects(client.read('todos'), /账号不匹配/);
+    authenticated = false; username = null;
+    await assert.rejects(client.read('todos'), /登录已失效/);
+    await assert.rejects(client.write('todos', {}, {}), /登录已失效/);
+    authenticated = true;
     username = 'owner';
     await assert.rejects(client.write('todos', { old: true }, { next: true }), /其他设备修改/);
     assert.equal(puts, 0);

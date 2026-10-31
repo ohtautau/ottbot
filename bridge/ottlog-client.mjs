@@ -30,7 +30,8 @@ export async function createOttlogClient(configFile, transport = fetch) {
   }
   async function session() {
     const s = await request('/api/account/session');
-    if (!s.authenticated || s.userName !== config.expectedUserName || s.isAdmin !== config.expectedAdmin) throw new Error('博客账号不匹配，已停止操作。');
+    if (!s.authenticated) throw new Error('博客登录已失效，请重新绑定账号；本次未操作数据。');
+    if (s.userName !== config.expectedUserName || s.isAdmin !== config.expectedAdmin) throw new Error('博客账号不匹配，已停止操作。');
     return s;
   }
   const digest = data => createHash('sha256').update(JSON.stringify(data)).digest('hex');
