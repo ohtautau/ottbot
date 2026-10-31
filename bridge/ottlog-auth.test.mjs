@@ -1,10 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { manageOttlogAuth } from './ottlog-auth.mjs';
 import { createOttlogClient } from './ottlog-client.mjs';
+
+test('authorization maintenance CLI executes through the deployed current directory link', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'ottbot-grant-cli-'));
+  try {
+    const configFile = join(folder, 'revoked.json'), current = join(folder, 'current');
+    await writeFile(configFile, JSON.stringify({ origin: 'https://blog.example', expectedUserName: 'owner', expectedAdmin: false, authMode: 'bot', botRevokedAt: 'test' }));
+    await symlink(fileURLToPath(new URL('.', import.meta.url)), current, 'junction');
+    await assert.rejects(promisify(execFile)(process.execPath, [join(current, 'ottlog-auth.mjs'), 'status', '--config', configFile], { windowsHide: true }), error => {
+      assert.equal(error.code, 1); assert.match(error.stderr, /机器人授权已撤销/); return true;
+    });
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});
 
 test('independent blog grant replaces Cookies, uses scoped Bearer routes and never falls back after revocation', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'ottbot-grant-'));

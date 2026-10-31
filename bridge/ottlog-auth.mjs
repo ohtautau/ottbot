@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -69,7 +69,7 @@ export async function manageOttlogAuth({ action, configFile, sessionFile, name =
   throw new Error('用法：ottlog-auth.mjs bind|status|revoke [--config <文件>] [--session-file <登录文件>] [--name <名称>] [--confirm]');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(resolve(process.argv[1]))).href) {
   try {
     const args = process.argv.slice(2), action = args.shift();
     const options = { action, configFile: join(homedir(), 'ottbot-relay', 'shared', 'ottlog.json') };
