@@ -189,6 +189,7 @@ export async function sendWeixinImages(account, message, images, { request = api
     for (const { bytes } of validated) {
       sending = false;
       let uploaded;
+      let compatible = false;
       try { uploaded = await uploadImage(bytes, bytes.length > MAX_WEIXIN_COMPAT_BYTES); }
       catch (error) {
         if (!error.compatibilityFallback) throw error;
@@ -199,15 +200,18 @@ export async function sendWeixinImages(account, message, images, { request = api
         console.error(`微信CDN大图上传失败，使用兼容压缩图重试：原大小=${bytes.length}；发送大小=${compressed.length}`);
         // New bytes require a fresh ticket, key, MD5 and ciphertext size. Never retry sendmessage here.
         uploaded = await uploadImage(compressed);
+        compatible = true;
       }
       stage = '发送图片消息'; sending = true;
-      await request(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
+      const accepted = await request(account.baseUrl, '/ilink/bot/sendmessage', { msg: {
         from_user_id: '', to_user_id: account.owner, client_id: randomUUID(), message_type: 2, message_state: 2,
         context_token: message.context_token, item_list: [{ type: 2, image_item: {
           media: { encrypt_query_param: uploaded.download, aes_key: Buffer.from(uploaded.key.toString('hex')).toString('base64'), encrypt_type: 1 }, mid_size: uploaded.size,
         } }],
       } }, account.token);
       sent++;
+      // An API acknowledgement is not a client rendering receipt. Log shape only.
+      console.log(`图片消息接口已接受：序号=${sent}/${validated.length}；兼容副本=${compatible}；密文大小=${uploaded.size}；服务端消息编号=${Boolean(accepted?.message_id)}`);
     }
     return sent;
   } catch (error) {
