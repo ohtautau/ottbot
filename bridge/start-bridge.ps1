@@ -10,6 +10,10 @@ if (-not (Test-Path -LiteralPath $bridgeNode)) { throw 'Node.js 22+ is required.
 $bridgeRefreshCodexPath = $false
 if (-not $bridgeConfig.codexPath -or -not (Test-Path -LiteralPath $bridgeConfig.codexPath)) {
     $bridgeCurrentCodex = (Get-Command codex.exe -ErrorAction SilentlyContinue).Source
+    if (-not $bridgeCurrentCodex) {
+        $bridgeCodexInstall = Join-Path $env:LOCALAPPDATA 'OpenAI/Codex/bin'
+        $bridgeCurrentCodex = Get-ChildItem -LiteralPath $bridgeCodexInstall -Filter codex.exe -File -Recurse -Depth 1 -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+    }
     if (-not $bridgeCurrentCodex -or -not (Test-Path -LiteralPath $bridgeCurrentCodex)) { throw 'Codex executable was not found. Start Codex or reinstall it, then retry.' }
     $bridgeConfig | Add-Member -NotePropertyName codexPath -NotePropertyValue $bridgeCurrentCodex -Force
     $bridgeRefreshCodexPath = $true

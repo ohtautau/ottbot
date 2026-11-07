@@ -1,6 +1,4 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title ottbot Codex bridge
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0bridge\start-bridge.ps1"
-pause
+start "" powershell.exe -NoProfile -NonInteractive -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0bridge\tray-bridge.ps1" -ShowStatus

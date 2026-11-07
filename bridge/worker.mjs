@@ -2,7 +2,7 @@ import http from 'node:http';
 import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile, writeFile, mkdir, mkdtemp, rm, rename } from 'node:fs/promises';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
@@ -105,13 +105,23 @@ function json(res, status, data) {
 }
 
 export function codexArguments(config, model) {
+  if (config.autoReview === true && config.sandbox !== 'workspace-write') throw new Error('自动审批需要工作区写入模式。');
   const args = ['exec', '--ignore-user-config', '--ephemeral', '--json', '--color', 'never',
-    '-C', config.workspace, '-s', config.sandbox || 'read-only', '-m', model,
+    '-C', config.workspace, ...(config.autoReview === true ? ['--approve-for-me'] : ['-s', config.sandbox || 'read-only']), '-m', model,
     '-c', 'model_provider="openai"'];
   const effort = resolveEffort(config.reasoningEffort || 'low');
   if (!effort) throw new Error('推理强度配置无效。');
   if (effort !== 'auto') args.push('-c', `model_reasoning_effort="${effort}"`);
   if (config.skipGitCheck === true) args.push('--skip-git-repo-check');
+  if (config.writableDirectories !== undefined) {
+    if (config.sandbox !== 'workspace-write' || !Array.isArray(config.writableDirectories)
+      || config.writableDirectories.some(path => typeof path !== 'string' || !isAbsolute(path))) throw new Error('额外可写目录配置无效。');
+    for (const path of new Set(config.writableDirectories)) args.push('--add-dir', path);
+  }
+  if (config.networkAccess === true) {
+    if (config.sandbox !== 'workspace-write') throw new Error('联网权限需要工作区写入模式。');
+    args.push('-c', 'sandbox_workspace_write.network_access=true');
+  }
   return args;
 }
 
@@ -168,7 +178,9 @@ export async function runCodex(config, request, model, signal) {
       });
       child.stderr.resume(); // Do not copy credentials or local path diagnostics into chat/logs.
       child.stdin.on('error', () => {});
-      child.stdin.end(buildPrompt({ ...request, imagePaths, generatedImages: availableImages }));
+      child.stdin.end(buildPrompt({ ...request, imagePaths, generatedImages: availableImages })
+        + '\n本次执行权限JSON（仅描述配置，实际仍受工具沙箱限制；有工具时应先尝试执行，不要仅凭目录不在主工作区就声称只读）：'
+        + JSON.stringify({ sandbox: config.sandbox || 'read-only', workspace: config.workspace, writableDirectories: config.writableDirectories || [], networkAccess: config.networkAccess === true }));
       child.on('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('无法启动本机 Codex，请检查安装路径。')); });
       child.on('close', code => {
         clearTimeout(timer);

@@ -66,6 +66,16 @@ test('reasoning model limits, cache metadata and CLI overrides are explicit', as
   assert.deepEqual(await reasoningOptions({}, 'deepseek/model'), []);
   assert.ok(codexArguments({ workspace: '.', reasoningEffort: 'medium' }, MODELS.sol).includes('model_reasoning_effort="medium"'));
   assert.equal(codexArguments({ workspace: '.', reasoningEffort: 'auto' }, MODELS.sol).some(arg => arg.includes('model_reasoning_effort')), false);
+  const extra = join(tmpdir(), 'desktop-write');
+  const scoped = codexArguments({ workspace: '.', sandbox: 'workspace-write', writableDirectories: [extra, extra] }, MODELS.sol);
+  assert.equal(scoped.filter(arg => arg === '--add-dir').length, 1);
+  assert.equal(scoped[scoped.indexOf('--add-dir') + 1], extra);
+  assert.throws(() => codexArguments({ workspace: '.', sandbox: 'read-only', writableDirectories: [extra] }, MODELS.sol), /可写目录/);
+  assert.throws(() => codexArguments({ workspace: '.', sandbox: 'workspace-write', writableDirectories: ['relative'] }, MODELS.sol), /可写目录/);
+  assert.ok(codexArguments({ workspace: '.', sandbox: 'workspace-write', networkAccess: true }, MODELS.sol).includes('sandbox_workspace_write.network_access=true'));
+  const reviewed = codexArguments({ workspace: '.', sandbox: 'workspace-write', autoReview: true }, MODELS.sol);
+  assert.ok(reviewed.includes('--approve-for-me')); assert.ok(!reviewed.includes('-s'));
+  assert.throws(() => codexArguments({ workspace: '.', sandbox: 'read-only', autoReview: true }, MODELS.sol), /自动审批/);
   const folder = await mkdtemp(join(tmpdir(), 'ottbot-model-metadata-'));
   try {
     const path = join(folder, 'models.json');
