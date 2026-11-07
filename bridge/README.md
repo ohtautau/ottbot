@@ -47,7 +47,7 @@ Codex 通道每次调用前验证 ChatGPT 登录，忽略 API Key 环境变量�
 
 新建本机配置时设置 `OTTBOT_SSH_TARGET` 和 `OTTBOT_SSH_KEY`，可选 `OTTBOT_KNOWN_HOSTS`、`OTTBOT_WORKSPACE`，再运行 `node bridge/prepare-local.mjs <Codex可执行文件路径>`。私有配置位于已忽略的 `local-state/codex-bridge`。核对 SSH 主机指纹后再启动代理。
 
-双击 `start-codex-bridge.cmd` 启动托盘并查看状态，`stop-codex-bridge.cmd` 退出托盘并停止电脑代理。右下角通知区域显示电脑图标：绿点在线、黄点连接中、红点暂停。右键提供状态、重连、暂停、日志文件夹、登录自启开关和退出；退出不会取消下次登录自启。单实例运行，网络断开自动重连，执行端退出后每30秒重试；任务执行中禁用重连和暂停，避免误中断。状态检查不会调用模型。
+双击 `start-codex-bridge.cmd` 启动托盘并查看状态，`stop-codex-bridge.cmd` 退出托盘并停止电脑代理。右下角通知区域使用 Ottlog 蓝白 Logo，右下角状态点：绿点在线、黄点连接中、红点暂停。状态窗口沿用相同图标，可执行文件嵌入多尺寸 Logo；资源位于 `bridge/assets/ottbot-logo.png` 和 `.ico`。右键提供状态、重连、暂停、日志文件夹、登录自启开关和退出；退出不会取消下次登录自启。单实例运行，网络断开自动重连，执行端退出后每30秒重试；任务执行中禁用重连和暂停，避免误中断。状态检查不会调用模型。
 
 运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File bridge/install-autostart.ps1` 注册当前用户登录Windows后自启；`-Disable`移除本项目自己的启动项。使用HKCU Run的Ottbot值，无需管理员权限；不影响其他启动项。启动器用系统.NET编译本地原生托盘程序到忽略目录，不需另装运行库。程序及进程日志、私有状态都留在本机；不把开机自启注册到服务器。Windows可能将图标收进通知区域的折叠菜单。
 

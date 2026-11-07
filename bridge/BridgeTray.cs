@@ -347,16 +347,18 @@ namespace Ottbot
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
-        static Icon MakeIcon(Color color)
+        Icon MakeIcon(Color color)
         {
             using (var image = new Bitmap(32, 32))
             using (var graphics = Graphics.FromImage(image))
-            using (var pen = new Pen(Color.FromArgb(45, 125, 210), 3))
+            using (var logo = Image.FromFile(Path.Combine(root, @"bridge\assets\ottbot-logo.png")))
             using (var brush = new SolidBrush(color))
             {
                 graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                graphics.DrawRectangle(pen, 3, 4, 23, 17); graphics.DrawLine(pen, 13, 22, 13, 26); graphics.DrawLine(pen, 7, 27, 19, 27);
-                graphics.FillEllipse(Brushes.White, 18, 18, 14, 14); graphics.FillEllipse(brush, 20, 20, 10, 10);
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                graphics.DrawImage(logo, new Rectangle(0, 0, 32, 32));
+                graphics.FillEllipse(Brushes.White, 21, 21, 11, 11); graphics.FillEllipse(brush, 23, 23, 7, 7);
                 var handle = image.GetHicon();
                 try { using (var icon = Icon.FromHandle(handle)) return (Icon)icon.Clone(); }
                 finally { DestroyIcon(handle); }

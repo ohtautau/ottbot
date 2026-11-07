@@ -5,10 +5,20 @@ $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -le 5) { $env:PSModulePath = "$PSHOME\Modules;$env:PSModulePath" }
 $bridgeRoot = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $PSScriptRoot 'BridgeTray.cs'
-$version = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.Substring(0, 12)
+$logo = Join-Path $PSScriptRoot 'assets/ottbot-logo.png'
+$icon = Join-Path $PSScriptRoot 'assets/ottbot-logo.ico'
+$assetHashes = (@($source, $logo, $icon) | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash }) -join ''
+$hasher = [Security.Cryptography.SHA256]::Create()
+try { $version = [BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($assetHashes))).Replace('-', '').Substring(0, 12) } finally { $hasher.Dispose() }
 $program = Join-Path $bridgeRoot ('local-state/codex-bridge/OttbotTray-' + $version + '.exe')
 if (-not (Test-Path -LiteralPath $program)) {
-    Add-Type -Path $source -OutputAssembly $program -OutputType WindowsApplication -ReferencedAssemblies System, System.Core, System.Windows.Forms, System.Drawing, System.Net.Http, System.Web.Extensions, System.Management
+    $compiler = New-Object System.CodeDom.Compiler.CompilerParameters
+    $compiler.GenerateExecutable = $true
+    $compiler.GenerateInMemory = $false
+    $compiler.OutputAssembly = $program
+    $compiler.CompilerOptions = '/target:winexe /win32icon:"' + $icon + '"'
+    $compiler.ReferencedAssemblies.AddRange([string[]]@('System.dll', 'System.Core.dll', 'System.Windows.Forms.dll', 'System.Drawing.dll', 'System.Net.Http.dll', 'System.Web.Extensions.dll', 'System.Management.dll'))
+    Add-Type -Path $source -CompilerParameters $compiler
 }
 # This is a Windows GUI executable with no console. --background suppresses its
 # status form; SW_HIDE would also hide the first form opened later by the user.
