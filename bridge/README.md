@@ -49,6 +49,8 @@ Codex 通道每次调用前验证 ChatGPT 登录，忽略 API Key 环境变量�
 
 双击 `start-codex-bridge.cmd` 启动电脑代理，`stop-codex-bridge.cmd` 停止。电脑需要开机、代理运行且网络在线，未自动设置开机自启。
 
+启动时若原Codex路径已随应用更新失效，会查找当前`codex.exe`，验证仍为ChatGPT登录后原子更新私有路径；不会因为路径变更改用API登录。关闭电脑或代理后，微信的电脑任务会显示离线，服务器任务继续运行。
+
 CodeBuddy 自定义模型填写本机 `local-state/codex-bridge/codebuddy-settings.txt` 中的地址和转接密钥，模型名为 `codex-local`；工具调用不勾选，图片输入可勾选，推理模式和思考强度留空。转接密钥不是 OpenAI API Key。消息进入独立 Codex 执行会话，不会进入当前桌面聊天。
 
 所有模型端口只监听回环地址，电脑与服务器间使用 SSH 隧道。微信仅接受绑定账号私聊。请求串行，忙碌时拒绝新任务，超时取消子进程。不要将私人服务分享给多人。

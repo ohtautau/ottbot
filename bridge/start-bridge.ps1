@@ -7,6 +7,13 @@ $bridgeConfig = Get-Content -Raw -LiteralPath $bridgeConfigPath | ConvertFrom-Js
 $bridgeNode = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
 if (-not $bridgeNode) { $bridgeNode = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' }
 if (-not (Test-Path -LiteralPath $bridgeNode)) { throw 'Node.js 22+ is required.' }
+$bridgeRefreshCodexPath = $false
+if (-not $bridgeConfig.codexPath -or -not (Test-Path -LiteralPath $bridgeConfig.codexPath)) {
+    $bridgeCurrentCodex = (Get-Command codex.exe -ErrorAction SilentlyContinue).Source
+    if (-not $bridgeCurrentCodex -or -not (Test-Path -LiteralPath $bridgeCurrentCodex)) { throw 'Codex executable was not found. Start Codex or reinstall it, then retry.' }
+    $bridgeConfig | Add-Member -NotePropertyName codexPath -NotePropertyValue $bridgeCurrentCodex -Force
+    $bridgeRefreshCodexPath = $true
+}
 try {
     # Windows PowerShell 5 treats native stderr as ErrorRecord even for exit code 0.
     $ErrorActionPreference = 'Continue'
@@ -21,6 +28,16 @@ try {
     $bridgeLock = [System.IO.File]::Open((Join-Path $bridgeState 'supervisor.lock'), [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
     foreach ($bridgePort in @($bridgeConfig.port, $bridgeConfig.localRelayPort)) {
         if (Get-NetTCPConnection -LocalPort $bridgePort -State Listen -ErrorAction SilentlyContinue) { throw "Port $bridgePort is already in use; no existing process was stopped." }
+    }
+    if ($bridgeRefreshCodexPath) {
+        $bridgeConfigTemporary = $bridgeConfigPath + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+        try {
+            [System.IO.File]::WriteAllText($bridgeConfigTemporary, ($bridgeConfig | ConvertTo-Json -Depth 50), [System.Text.UTF8Encoding]::new($false))
+            [System.IO.File]::Replace($bridgeConfigTemporary, $bridgeConfigPath, [NullString]::Value)
+        } finally {
+            if (Test-Path -LiteralPath $bridgeConfigTemporary) { Remove-Item -LiteralPath $bridgeConfigTemporary -Force }
+        }
+        Write-Host 'Codex installation moved after an update; the verified ChatGPT executable path was refreshed.'
     }
     $bridgeWorkerArgs = @(('"' + (Join-Path $PSScriptRoot 'worker.mjs') + '"'), ('"' + $bridgeConfigPath + '"'))
     $bridgeWorker = Start-Process -FilePath $bridgeNode -ArgumentList $bridgeWorkerArgs -WorkingDirectory $ottbotRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $bridgeState 'worker.log') -RedirectStandardError (Join-Path $bridgeState 'worker-error.log')
